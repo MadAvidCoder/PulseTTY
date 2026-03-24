@@ -24,12 +24,16 @@ fn main() -> io::Result<()> {
         let mut lines = vec![String::new(); 16];
 
         for i in 0..20 {
-            cur_values[i] += ((target_values[i] - cur_values[i]) as f32) * 0.13;
+            if target_values[i] > cur_values[i] {
+                cur_values[i] += ((target_values[i] - cur_values[i]) as f32) * 0.23;
+            } else {
+                cur_values[i] += ((target_values[i] - cur_values[i]) as f32) * 0.12;
+            }
 
             if cur_values[i] > peaks[i] {
                 peaks[i] = cur_values[i];
             } else {
-                peaks[i] -= 0.17
+                peaks[i] -= 0.12
             }
             peaks[i] = peaks[i].max(cur_values[i]);
 
@@ -60,6 +64,6 @@ fn main() -> io::Result<()> {
         }
         
         stdout.flush()?;
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(75));
     }
 }

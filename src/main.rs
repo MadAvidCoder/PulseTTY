@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::thread;
 use std::time::Duration;
 use rand::prelude::*;
@@ -10,6 +11,7 @@ fn main() -> io::Result<()> {
     let mut stdout = stdout();
 
     let mut cur_values: Vec<f32> = vec![0f32; 20];
+    let mut peaks: Vec<f32> = vec![0f32; 20];
 
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
@@ -22,11 +24,24 @@ fn main() -> io::Result<()> {
         let mut lines = vec![String::new(); 16];
 
         for i in 0..20 {
-            cur_values[i] += ((target_values[i] - cur_values[i]) as f32) * 0.2;
-            let height: u32 = (((cur_values[i] * 16.0) + 99.0) / 100.0) as u32;
+            cur_values[i] += ((target_values[i] - cur_values[i]) as f32) * 0.13;
+
+            if cur_values[i] > peaks[i] {
+                peaks[i] = cur_values[i];
+            } else {
+                peaks[i] -= 0.17
+            }
+            peaks[i] = peaks[i].max(cur_values[i]);
+
+            let height: u32 = (cur_values[i] / 100.0 * 16f32).round() as u32;
+            let peak_height: u32 = max((peaks[i] / 100.0 * 16f32).round() as u32, height+1);
+
             for (e, l) in lines.iter_mut().enumerate() {
-                if height >= 16 - e as u32 {
+                if 16 - e as u32 == peak_height {
+                    l.push_str("▄▄▄ ")
+                } else if 16 - e as u32 <= height {
                     l.push_str("▒▒▒ ");
+                    // l.push_str("░░░ ")
                 } else {
                     l.push_str("    ");
                 }
@@ -45,6 +60,6 @@ fn main() -> io::Result<()> {
         }
         
         stdout.flush()?;
-        thread::sleep(Duration::from_millis(50));
+        thread::sleep(Duration::from_millis(500));
     }
 }

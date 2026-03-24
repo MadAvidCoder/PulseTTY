@@ -2,8 +2,8 @@ use std::thread;
 use std::time::Duration;
 use rand::prelude::*;
 use std::io::{self, Write, stdout};
-use crossterm::{QueueableCommand, cursor, style, ExecutableCommand, terminal};
-use crossterm::style::Stylize;
+use crossterm::{QueueableCommand, cursor, style, ExecutableCommand, terminal, queue};
+use crossterm::style::{SetForegroundColor, Color};
 
 fn main() -> io::Result<()> {
     let mut rng = rand::rng();
@@ -31,8 +31,14 @@ fn main() -> io::Result<()> {
         }
 
         for (e, line) in lines.into_iter().enumerate() {
+            stdout.queue(SetForegroundColor(match e {
+                0..=2 => Color::Red,
+                3..=6 => Color::Yellow,
+                7..=15 => Color::Green,
+                _ => Color::White,
+            }))?;
             stdout.queue(cursor::MoveTo(0, e as u16))?;
-            stdout.queue(style::PrintStyledContent(line.magenta()))?;
+            stdout.queue(style::Print(line))?;
         }
         
         stdout.flush()?;

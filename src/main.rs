@@ -1,7 +1,6 @@
 mod render;
+mod fft;
 
-use std::cmp::{max, min};
-use std::f32::consts::PI;
 use symphonia::core::errors::Error;use std::thread;
 use std::time::Duration;
 use symphonia::core::io::MediaSourceStreamOptions;
@@ -15,6 +14,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::audio::SampleBuffer;
 use rustfft::{FftPlanner, num_complex::Complex};
+use crate::fft::process;
 
 const FFT_SIZE: usize = 4096;
 
@@ -135,75 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if buffer.len() >= FFT_SIZE {
             let mut chunk: Vec<Complex<f32>> = buffer[buffer.len() - FFT_SIZE..].iter().map(|&f| Complex::new(f, 0f32)).collect();
-
-            for (i, sample) in chunk.iter_mut().enumerate() {
-                // Blackman harris. less leakage than hann
-                // TODO: Precompute for efficiency
-                let a0 = 0.35875;
-                let a1 = 0.48829;
-                let a2 = 0.14128;
-                let a3 = 0.01168;
-
-                let t = i as f32 / FFT_SIZE as f32;
-
-                let w = a0
-                    - a1 * (2.0 * PI * t).cos()
-                    + a2 * (4.0 * PI * t).cos()
-                    - a3 * (6.0 * PI * t).cos();
-
-                sample.re *= w;
-            }
-
-            fft.process(&mut chunk);
-
-            let magnitudes: Vec<f32> = chunk.iter()
-                .take(FFT_SIZE / 2)
-                .map(|c| (c.re * c.re + c.im * c.im).sqrt())
-                .collect();
-
-            let fft_bins = FFT_SIZE / 2;
-            let mel_min = hz_to_mel(20.0);
-            let mel_max = hz_to_mel(sample_rate / 2.0);
-
-            for i in 0..20 {
-                // TODO: tweak bass dominance
-                let mel_start = mel_min + (mel_max - mel_min) * (i as f32 / 20.0);
-                let mel_end   = mel_min + (mel_max - mel_min) * ((i as f32 + 1.0) / 20.0);
-
-                let freq_start = mel_to_hz(mel_start);
-                let freq_end   = mel_to_hz(mel_end);
-
-                let start_bin = (freq_start * FFT_SIZE as f32 / sample_rate) as usize;
-                let end_bin= (freq_end * FFT_SIZE as f32 / sample_rate) as usize;
-
-                let start_bin = min(start_bin, fft_bins - 1);
-                let end_bin = min(max(end_bin, start_bin + 1), fft_bins);
-
-                let slice = &magnitudes[start_bin..end_bin];
-
-                let sum: f32 = slice.into_iter().map(|m| m*m).sum();
-
-                // let avg = slice.iter().sum::<f32>() / slice.len() as f32;
-                let rms: f32 = (sum / slice.len() as f32).sqrt();
-
-                // let value = rms * 10.0;
-                let db = 20f32 * rms.max(1e-6).log10();
-                let mut value = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
-
-                let noise_floor = 0.08;
-
-                value = (value - noise_floor).max(0.0) / (1.0 - noise_floor);
-
-                let freq = i as f32 / 19.0;
-                let gate = 0.04 + 0.10 * freq;
-
-                if value < gate {
-                    value = 0.0;
-                }
-
-                target_values[i] = value * 100.0;
-
-            }
+            target_values = process(&fft, chunk, sample_rate);
         }
 
         let mut smoothed_targets = target_values.clone();

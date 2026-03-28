@@ -8,3 +8,4 @@ crossterm = "0.29.0"
 rand = "0.10.0"
 rustfft = "6.4.1"
 symphonia = { version = "0.5", features = ["mp3", "wav", "flac", "ogg"] }
+wasapi = "0.22.0"

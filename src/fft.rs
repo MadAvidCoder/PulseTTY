@@ -6,7 +6,7 @@ use rustfft::num_complex::Complex;
 use crate::FFT_SIZE;
 use crate::helpers::{hz_to_mel, mel_to_hz};
 
-pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32) -> Vec<f32> {
+pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32, normalise_db: bool) -> Vec<f32> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
     for (i, sample) in chunk.iter_mut().enumerate() {
         // Blackman harris. less leakage than hann
@@ -53,14 +53,18 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
 
         let slice = &magnitudes[start_bin..end_bin];
 
-        let sum: f32 = slice.into_iter().map(|m| m*m).sum();
-
         // let avg = slice.iter().sum::<f32>() / slice.len() as f32;
-        let rms: f32 = (sum / slice.len() as f32).sqrt();
+        let avg = slice.iter().sum::<f32>() / slice.len() as f32;
+        let rms = avg;
 
         // let value = rms * 10.0;
-        let db = 20f32 * rms.max(1e-6).log10();
-        let mut value = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
+        let mut value;
+        if normalise_db {
+            let db = 20f32 * rms.max(1e-6).log10();
+            value = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
+        } else {
+            value = rms.clamp(0.0, 1.0);
+        }
 
         let noise_floor = 0.08;
 

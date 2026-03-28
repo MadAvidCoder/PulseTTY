@@ -5,9 +5,8 @@ use std::f32::consts::PI;
 use symphonia::core::errors::Error;use std::thread;
 use std::time::Duration;
 use symphonia::core::io::MediaSourceStreamOptions;
-use std::io::{self, stdout, Write};
+use std::io::{stdout, Write};
 use std::fs::File;
-use rand::prelude::*;
 use crossterm::{ExecutableCommand, terminal};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
@@ -16,7 +15,6 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::audio::SampleBuffer;
 use rustfft::{FftPlanner, num_complex::Complex};
-use rustfft::num_traits::Zero;
 
 const FFT_SIZE: usize = 4096;
 
@@ -40,8 +38,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(FFT_SIZE);
 
-    let mut smooth_max: f32 = 1.0;
-
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
     let file = Box::new(File::open("test.mp3").expect("Failed to open file."));
@@ -55,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &format_opts, &metadata_opts)
-        .expect("unsupported format");
+        .expect("no support for format");
 
     let mut format = probed.format;
     let track = format
@@ -74,16 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
 
     loop {
-
         let packet = match format.next_packet() {
             Ok(packet) => packet,
             Err(Error::ResetRequired) => {
-                // Track list changed (e.g., chained OGG streams)
-                // Recreate decoders and restart
                 unimplemented!();
             }
             Err(Error::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                // End of stream reached
                 return Ok(());
             }
             Err(err) => {
@@ -98,11 +90,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         while !format.metadata().is_latest() {
             format.metadata().pop();
-            // Process metadata if needed
         }
 
-
-        // Decode the packet
         match decoder.decode(&packet) {
             Ok(decoded) => {
                 if sample_buf.is_none() {
@@ -115,11 +104,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(buf) = &mut sample_buf {
                     buf.copy_interleaved_ref(decoded);
 
-                    // Access the samples
                     let samples = buf.samples();
-                    // sample_count += samples.len();
-                    // println!("Total samples decoded: {}", sample_count);
                     for frame in samples.chunks(2) {
+                        // let mono = frame[0];
+
+                        // proper mono averaging
                         let mono: f32 = if frame.len() == 2 {
                             (frame[0] + frame[1]) * 0.5
                         } else {
@@ -148,6 +137,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut chunk: Vec<Complex<f32>> = buffer[buffer.len() - FFT_SIZE..].iter().map(|&f| Complex::new(f, 0f32)).collect();
 
             for (i, sample) in chunk.iter_mut().enumerate() {
+                // Blackman harris. less leakage than hann
+                // TODO: Precompute for efficiency
                 let a0 = 0.35875;
                 let a1 = 0.48829;
                 let a2 = 0.14128;
@@ -175,6 +166,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mel_max = hz_to_mel(sample_rate / 2.0);
 
             for i in 0..20 {
+                // TODO: tweak bass dominance
                 let mel_start = mel_min + (mel_max - mel_min) * (i as f32 / 20.0);
                 let mel_end   = mel_min + (mel_max - mel_min) * ((i as f32 + 1.0) / 20.0);
 
@@ -182,21 +174,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let freq_end   = mel_to_hz(mel_end);
 
                 let start_bin = (freq_start * FFT_SIZE as f32 / sample_rate) as usize;
-                let end_bin   = (freq_end   * FFT_SIZE as f32 / sample_rate) as usize;
+                let end_bin= (freq_end * FFT_SIZE as f32 / sample_rate) as usize;
 
                 let start_bin = min(start_bin, fft_bins - 1);
                 let end_bin = min(max(end_bin, start_bin + 1), fft_bins);
 
                 let slice = &magnitudes[start_bin..end_bin];
 
-                let mut sum = 0.0;
-                for m in slice {
-                    sum += m * m;
-                }
+                let sum: f32 = slice.into_iter().map(|m| m*m).sum();
 
-                let rms = (sum / slice.len() as f32).sqrt();
+                // let avg = slice.iter().sum::<f32>() / slice.len() as f32;
+                let rms: f32 = (sum / slice.len() as f32).sqrt();
 
-                let db = 20.0 * rms.max(1e-6).log10();
+                // let value = rms * 10.0;
+                let db = 20f32 * rms.max(1e-6).log10();
                 let mut value = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
 
                 let noise_floor = 0.08;
@@ -238,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for i in 0..20 {
             let freq = i as f32 / 19.0;
             let attack = 0.25 + 0.35 * freq;
-            let release = 0.08 + 0.10 * freq;
+            let release = 0.11 + 0.09 * freq;
 
             let coeff = if target_values[i] > cur_values[i] {
                 attack
@@ -253,7 +244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if cur_values[i] > peaks[i] {
                 peaks[i] = cur_values[i];
             } else {
-                peaks[i] -= 0.05 + 0.25 * freq;
+                peaks[i] -= 0.072 + 0.25 * freq;
             }
             peaks[i] = peaks[i].max(cur_values[i]);
         }

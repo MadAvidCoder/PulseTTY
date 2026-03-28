@@ -3,9 +3,10 @@ use std::f32::consts::PI;
 use std::sync::Arc;
 use rustfft::Fft;
 use rustfft::num_complex::Complex;
-use crate::{hz_to_mel, mel_to_hz, FFT_SIZE};
+use crate::FFT_SIZE;
+use crate::helpers::{hz_to_mel, mel_to_hz};
 
-pub fn process(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32) -> Vec<f32> {
+pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32) -> Vec<f32> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
     for (i, sample) in chunk.iter_mut().enumerate() {
         // Blackman harris. less leakage than hann
@@ -75,4 +76,47 @@ pub fn process(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rat
         target_values[i] = value * 100.0;
     }
     target_values
+}
+
+pub fn smooth(target_values: &Vec<f32>, cur_values: &mut Vec<f32>, peaks: &mut Vec<f32>) {
+    let mut smoothed_targets = target_values.clone();
+
+    for i in 0..20 {
+        let mut sum = target_values[i];
+        let mut count = 1.0;
+
+        if i > 0 {
+            sum += target_values[i - 1] * 0.5;
+            count += 0.5;
+        }
+        if i < 19 {
+            sum += target_values[i + 1] * 0.5;
+            count += 0.5;
+        }
+
+        smoothed_targets[i] = sum / count;
+    }
+
+    for i in 0..20 {
+        let freq = i as f32 / 19.0;
+        let attack = 0.25 + 0.35 * freq;
+        let release = 0.11 + 0.09 * freq;
+
+        let coeff = if smoothed_targets[i] > cur_values[i] {
+            attack
+        } else {
+            release
+        };
+        cur_values[i] += (smoothed_targets[i] - cur_values[i]) * coeff;
+
+        let delta = (smoothed_targets[i] - cur_values[i]).max(0.0);
+        cur_values[i] += delta * 0.15;
+
+        if cur_values[i] > peaks[i] {
+            peaks[i] = cur_values[i];
+        } else {
+            peaks[i] -= 0.072 + 0.25 * freq;
+        }
+        peaks[i] = peaks[i].max(cur_values[i]);
+    }
 }

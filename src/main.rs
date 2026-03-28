@@ -1,19 +1,13 @@
 mod render;
 mod fft;
+mod audio;
 
-use symphonia::core::errors::Error;use std::thread;
+use std::thread;
 use std::time::Duration;
-use symphonia::core::io::MediaSourceStreamOptions;
 use std::io::{stdout, Write};
-use std::fs::File;
 use crossterm::{ExecutableCommand, terminal};
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
-use symphonia::core::audio::SampleBuffer;
 use rustfft::{FftPlanner, num_complex::Complex};
+use crate::audio::AudioState;
 use crate::fft::process;
 
 const FFT_SIZE: usize = 4096;
@@ -32,110 +26,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cur_values: Vec<f32> = vec![0f32; 20];
     let mut peaks: Vec<f32> = vec![0f32; 20];
 
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
-    let mut buffer: Vec<f32> = Vec::new();
-
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(FFT_SIZE);
 
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
-    let file = Box::new(File::open("test.mp3").expect("Failed to open file."));
-    let mss = MediaSourceStream::new(file, MediaSourceStreamOptions::default());
-
-    let mut hint = Hint::new();
-    hint.with_extension("mp3");
-    let format_opts = FormatOptions::default();
-    let metadata_opts = MetadataOptions::default();
-    let decoder_opts = DecoderOptions::default();
-
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &metadata_opts)
-        .expect("no support for format");
-
-    let mut format = probed.format;
-    let track = format
-        .tracks()
-        .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .expect("no supported audio tracks");
-
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &decoder_opts)
-        .expect("unsupported codec");
-
-    let track_id = track.id;
-
-    let mut sample_rate: f32 = 44100f32;
     let mut target_values: Vec<f32> = vec![0f32; 20];
 
+    let mut audio_state = AudioState::new("test.mp3");
+
     loop {
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(Error::ResetRequired) => {
-                unimplemented!();
-            }
-            Err(Error::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(());
-            }
-            Err(err) => {
-                eprintln!("Error reading packet: {}", err);
-                return Err(err.into());
-            }
-        };
+        audio_state.next_sample().expect("");
 
-        if packet.track_id() != track_id {
-            continue;
-        }
-
-        while !format.metadata().is_latest() {
-            format.metadata().pop();
-        }
-
-        match decoder.decode(&packet) {
-            Ok(decoded) => {
-                if sample_buf.is_none() {
-                    sample_rate = decoded.spec().rate as f32;
-                    let spec = *decoded.spec();
-                    let duration = decoded.capacity() as u64;
-                    sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
-                }
-
-                if let Some(buf) = &mut sample_buf {
-                    buf.copy_interleaved_ref(decoded);
-
-                    let samples = buf.samples();
-                    for frame in samples.chunks(2) {
-                        // let mono = frame[0];
-
-                        // proper mono averaging
-                        let mono: f32 = if frame.len() == 2 {
-                            (frame[0] + frame[1]) * 0.5
-                        } else {
-                            frame[0]
-                        };
-                        buffer.push(mono);
-                    }
-                    if buffer.len() > FFT_SIZE * 4 {
-                        buffer.drain(0..buffer.len() - FFT_SIZE * 2);
-                    }
-                }
-            }
-            Err(Error::IoError(_)) => {
-                continue;
-            }
-            Err(Error::DecodeError(_)) => {
-                continue;
-            }
-            Err(err) => {
-                eprintln!("Unrecoverable decode error: {}", err);
-                return Err(err.into());
-            }
-        }
-
-        if buffer.len() >= FFT_SIZE {
-            let mut chunk: Vec<Complex<f32>> = buffer[buffer.len() - FFT_SIZE..].iter().map(|&f| Complex::new(f, 0f32)).collect();
-            target_values = process(&fft, chunk, sample_rate);
+        if audio_state.buffer.len() >= FFT_SIZE {
+            let chunk: Vec<Complex<f32>> = audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..].iter().map(|&f| Complex::new(f, 0f32)).collect();
+            target_values = process(&fft, chunk, audio_state.sample_rate);
         }
 
         let mut smoothed_targets = target_values.clone();

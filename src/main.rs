@@ -40,47 +40,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
 
     let mut rolling_buffer: Vec<f32> = Vec::with_capacity(FFT_SIZE);
+    let target_wasapi = FFT_SIZE * 2;
+    let max_wasapi = FFT_SIZE * 3;
 
+    let mut got_wasapi_samples: bool = false;
     loop {
         // audio_state.next_sample().expect("Error fetching sample.");
 
-        loop {
-            match capture_client.get_next_packet_size()? {
-                Some(packet_size) if packet_size > 0 => {
-                    let bytes_per_frame = format.get_nchannels() as usize * (format.get_validbitspersample() as usize / 8);
-                    let mut buf = vec![0u8; (packet_size as usize) * bytes_per_frame];
-
-                    let (frames_read, _) = capture_client.read_from_device(&mut buf)?;
-                    let bytes_read = frames_read as usize * bytes_per_frame;
-                    let raw_bytes = &buf[..bytes_read];
-
-                    let samples: Vec<f32> = match format.get_subformat().unwrap() {
-                        wasapi::SampleType::Float => unsafe {
-                            std::slice::from_raw_parts(raw_bytes.as_ptr() as *const f32, bytes_read / 4).to_vec()
-                        },
-                        wasapi::SampleType::Int => unsafe {
-                            std::slice::from_raw_parts(raw_bytes.as_ptr() as *const i16, bytes_read / 2)
-                                .iter()
-                                .map(|&v| v as f32 / i16::MAX as f32)
-                                .collect()
-                        },
-                    };
-                    
-                    let mono: Vec<f32> = if format.get_nchannels() == 2 {
-                        (&samples).chunks(2).map(|c| (c[0] + c[1]) * 0.5).collect()
-                    } else {
-                        samples
-                    };
-
-                    rolling_buffer.extend(mono.clone());
-                },
-
-                _ => { break; },
+        while let Some(packet_size) = capture_client.get_next_packet_size()? {
+            if packet_size == 0 {
+                break;
             }
+
+            let bytes_per_frame = format.get_nchannels() as usize * (format.get_validbitspersample() as usize / 8);
+            let mut buf = vec![0u8; (packet_size as usize) * bytes_per_frame];
+
+            let (frames_read, _) = capture_client.read_from_device(&mut buf)?;
+            let bytes_read = frames_read as usize * bytes_per_frame;
+            let raw_bytes = &buf[..bytes_read];
+
+            let samples: Vec<f32> = match format.get_subformat().unwrap() {
+                wasapi::SampleType::Float => unsafe {
+                    std::slice::from_raw_parts(raw_bytes.as_ptr() as *const f32, bytes_read / 4).to_vec()
+                },
+                wasapi::SampleType::Int => unsafe {
+                    std::slice::from_raw_parts(raw_bytes.as_ptr() as *const i16, bytes_read / 2)
+                        .iter()
+                        .map(|&v| v as f32 / i16::MAX as f32)
+                        .collect()
+                },
+            };
+
+            let mono: Vec<f32> = if format.get_nchannels() == 2 {
+                (&samples).chunks(2).map(|c| (c[0] + c[1]) * 0.5).collect()
+            } else {
+                samples
+            };
+
+            rolling_buffer.extend(mono);
+            got_wasapi_samples = true;
         }
 
-        if rolling_buffer.len() > FFT_SIZE * 4 {
-            rolling_buffer.drain(0..rolling_buffer.len() - FFT_SIZE * 2);
+        if !got_wasapi_samples {
+            let silence_length = (format.get_samplespersec() as f32 * 0.075) as usize;
+            rolling_buffer.extend(std::iter::repeat(0f32).take(silence_length));
+        }
+
+        if rolling_buffer.len() > max_wasapi {
+            rolling_buffer.drain(0..rolling_buffer.len() - target_wasapi);
         }
 
         if rolling_buffer.len() >= FFT_SIZE {
@@ -88,10 +95,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
             let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
             target_values = fft::transform(&fft, scaled, format.get_samplespersec() as f32, false);
-        } else {
-            target_values = vec![0f32; 20]
         }
-
+        // println!("{:?}", target_values);
 
         // if audio_state.buffer.len() >= FFT_SIZE {
         //     let chunk: Vec<Complex<f32>> = audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..]

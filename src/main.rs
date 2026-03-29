@@ -88,11 +88,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rolling_buffer.extend(std::iter::repeat(0f32).take(silence_length));
         }
 
-        if rolling_buffer.len() >= readpos + FFT_SIZE {
+        if rolling_buffer.len() >= FFT_SIZE {
+            let end = rolling_buffer.len();
+            if readpos + hop_size <= end {
+                readpos = end.saturating_sub(FFT_SIZE);
+            }
+
             let chunk = &rolling_buffer[readpos..readpos+FFT_SIZE];
             let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
             let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
             target_values = fft::transform(&fft, scaled, format.get_samplespersec() as f32, false);
+            
             readpos += hop_size;
         }
 

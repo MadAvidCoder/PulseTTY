@@ -1,28 +1,38 @@
 use std::cmp::{max, min};
 use std::f32::consts::PI;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use rustfft::Fft;
 use rustfft::num_complex::Complex;
 use crate::FFT_SIZE;
 use crate::helpers::{hz_to_mel, mel_to_hz};
 
+static WINDOW: OnceLock<Vec<f32>> = OnceLock::new();
+
 pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32, normalise_db: bool) -> Vec<f32> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
-    for (i, sample) in chunk.iter_mut().enumerate() {
-        // Blackman harris. less leakage than hann
-        // TODO: Precompute for efficiency
-        let a0 = 0.35875;
-        let a1 = 0.48829;
-        let a2 = 0.14128;
-        let a3 = 0.01168;
+    for (sample, w) in chunk.iter_mut()
+        .zip(
+            WINDOW.get_or_init(|| {
+                (0..FFT_SIZE)
+                    .map(|i| {
+                        // Blackman harris. less leakage than hann
+                        let a0 = 0.35875;
+                        let a1 = 0.48829;
+                        let a2 = 0.14128;
+                        let a3 = 0.01168;
 
-        let t = i as f32 / FFT_SIZE as f32;
+                        let t = i as f32 / FFT_SIZE as f32;
 
-        let w = a0
-            - a1 * (2.0 * PI * t).cos()
-            + a2 * (4.0 * PI * t).cos()
-            - a3 * (6.0 * PI * t).cos();
-
+                        a0
+                            - a1 * (2.0 * PI * t).cos()
+                            + a2 * (4.0 * PI * t).cos()
+                            - a3 * (6.0 * PI * t).cos()
+                    })
+                    .collect::<Vec<f32>>()
+            })
+            .iter()
+        )
+    {
         sample.re *= w;
     }
 

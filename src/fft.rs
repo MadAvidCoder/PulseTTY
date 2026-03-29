@@ -39,8 +39,8 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
 
     for i in 0..20 {
         // TODO: tweak bass dominance
-        let mel_start = mel_min + (mel_max - mel_min) * (i as f32 / 20.0);
-        let mel_end   = mel_min + (mel_max - mel_min) * ((i as f32 + 1.0) / 20.0);
+        let mel_start = mel_min + (mel_max - mel_min) * (i as f32 / 20.0).powf(1.5);
+        let mel_end   = mel_min + (mel_max - mel_min) * ((i as f32 + 1.0) / 20.0).powf(1.5);
 
         let freq_start = mel_to_hz(mel_start);
         let freq_end   = mel_to_hz(mel_end);
@@ -53,7 +53,6 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
 
         let slice = &magnitudes[start_bin..end_bin];
 
-        // let avg = slice.iter().sum::<f32>() / slice.len() as f32;
         let avg = slice.iter().sum::<f32>() / slice.len() as f32;
         let rms = avg;
 

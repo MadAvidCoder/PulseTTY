@@ -10,7 +10,8 @@ use crossterm::{ExecutableCommand, terminal};
 use rustfft::{FftPlanner, num_complex::Complex};
 use wasapi;
 
-const FFT_SIZE: usize = 4096;
+// const FFT_SIZE: usize = 4096;
+const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();

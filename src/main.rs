@@ -41,10 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
 
     let mut rolling_buffer: Vec<f32> = Vec::with_capacity(FFT_SIZE);
-    let target_wasapi = FFT_SIZE * 2;
-    let max_wasapi = FFT_SIZE * 3;
 
     let mut got_wasapi_samples: bool = false;
+    let mut readpos = 0usize;
+    let hop_size = FFT_SIZE / 2;
+
     loop {
         // audio_state.next_sample().expect("Error fetching sample.");
 
@@ -87,15 +88,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rolling_buffer.extend(std::iter::repeat(0f32).take(silence_length));
         }
 
-        if rolling_buffer.len() > max_wasapi {
-            rolling_buffer.drain(0..rolling_buffer.len() - target_wasapi);
-        }
-
-        if rolling_buffer.len() >= FFT_SIZE {
-            let chunk = &rolling_buffer[rolling_buffer.len() - FFT_SIZE..];
+        if rolling_buffer.len() >= readpos + FFT_SIZE {
+            let chunk = &rolling_buffer[readpos..readpos+FFT_SIZE];
             let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
             let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
             target_values = fft::transform(&fft, scaled, format.get_samplespersec() as f32, false);
+            readpos += hop_size;
+        }
+
+        if rolling_buffer.len() > FFT_SIZE * 2 {
+            rolling_buffer.drain(0..readpos);
+            readpos = 0;
         }
         // println!("{:?}", target_values);
 

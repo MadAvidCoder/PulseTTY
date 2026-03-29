@@ -42,11 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut rolling_buffer: Vec<f32> = Vec::with_capacity(FFT_SIZE);
 
-    let mut got_wasapi_samples: bool = false;
     let mut readpos = 0usize;
     let hop_size = FFT_SIZE / 2;
 
     loop {
+        let mut got_wasapi_samples: bool = false;
         // audio_state.next_sample().expect("Error fetching sample.");
 
         while let Some(packet_size) = capture_client.get_next_packet_size()? {
@@ -98,7 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
             let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
             target_values = fft::transform(&fft, scaled, format.get_samplespersec() as f32, false);
-            
+
             readpos += hop_size;
         }
 

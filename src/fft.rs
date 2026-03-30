@@ -40,7 +40,7 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
 
     let magnitudes: Vec<f32> = chunk.iter()
         .take(FFT_SIZE / 2)
-        .map(|c| (c.re * c.re + c.im * c.im).sqrt())
+        .map(|c| c.re * c.re + c.im * c.im)
         .collect();
 
     let fft_bins = FFT_SIZE / 2;
@@ -61,31 +61,52 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
         let start_bin = min(start_bin, fft_bins - 1);
         let end_bin = min(max(end_bin, start_bin + 1), fft_bins);
 
-        let slice = &magnitudes[start_bin..end_bin];
+        let pad = (end_bin - start_bin) / 2;
 
-        let avg = slice.iter().sum::<f32>() / slice.len() as f32;
-        let rms = avg;
+        let start = start_bin.saturating_sub(pad);
+        let end = (end_bin + pad).min(fft_bins);
 
-        // let value = rms * 10.0;
-        let mut value;
-        if normalise_db {
-            let db = 20f32 * rms.max(1e-6).log10();
-            value = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
+        let slice = &magnitudes[start..end];
+
+        let mut sum = 0.0;
+        let mut weight_sum = 0.0;
+
+        if slice.len() <= 1 {
+            target_values[i] = slice.get(0).copied().unwrap_or(0.0);
+            continue;
+        }
+
+        for (j, &mag) in slice.iter().enumerate() {
+            let t: f32 = j as f32 / (slice.len() - 1) as f32;
+            let weight = 1.0 - (t-0.5).abs() * 2.0;
+
+            sum += mag * weight;
+            weight_sum += weight;
+        }
+
+        let mut value = if weight_sum > 0.0 {
+            sum / weight_sum
         } else {
-            value = rms.clamp(0.0, 1.0);
-        }
+            0.0
+        };
 
-        let noise_floor = 0.08;
+        // let noise_floor = 0.08;
+        //
+        // value = (value - noise_floor).max(0.0) / (1.0 - noise_floor);
+        //
+        // let freq = i as f32 / 19.0;
+        // let gate = 0.04 + 0.10 * freq;
+        //
+        // if value < gate {
+        //     value = 0.0;
+        // }
 
-        value = (value - noise_floor).max(0.0) / (1.0 - noise_floor);
+        let rms = value.max(1e-6);
+        let db = 20.0 * rms.log10();
 
-        let freq = i as f32 / 19.0;
-        let gate = 0.04 + 0.10 * freq;
+        let mut value = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
 
-        if value < gate {
-            value = 0.0;
-        }
-
+        value = value.powf(1.5);
         target_values[i] = value * 100.0;
     }
     target_values

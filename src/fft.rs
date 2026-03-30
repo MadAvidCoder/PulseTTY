@@ -84,7 +84,7 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
             weight_sum += weight;
         }
 
-        let mut value = if weight_sum > 0.0 {
+        let value = if weight_sum > 0.0 {
             sum / weight_sum
         } else {
             0.0
@@ -107,6 +107,12 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
         let mut value = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
 
         value = value.powf(1.5);
+
+        let freq = i as f32 / 19.0;
+
+        let weight = 0.75 + 0.2 * freq;
+        value *= weight;
+
         target_values[i] = value * 100.0;
     }
     target_values

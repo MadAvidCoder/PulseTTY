@@ -112,8 +112,8 @@ pub fn smooth(target_values: &Vec<f32>, cur_values: &mut Vec<f32>, peaks: &mut V
 
     for i in 0..20 {
         let freq = i as f32 / 19.0;
-        let attack = 0.25 + 0.35 * freq;
-        let release = 0.11 + 0.09 * freq;
+        let attack = 0.13 + 0.12 * freq;
+        let release = 0.03 + 0.03 * freq;
 
         let coeff = if smoothed_targets[i] > cur_values[i] {
             attack
@@ -128,7 +128,7 @@ pub fn smooth(target_values: &Vec<f32>, cur_values: &mut Vec<f32>, peaks: &mut V
         if cur_values[i] > peaks[i] {
             peaks[i] = cur_values[i];
         } else {
-            peaks[i] -= 0.072 + 0.25 * freq;
+            peaks[i] -= 0.07 + 0.08 * freq;
         }
         peaks[i] = peaks[i].max(cur_values[i]);
     }

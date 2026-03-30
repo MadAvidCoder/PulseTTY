@@ -122,6 +122,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         stdout.flush()?;
 
-        thread::sleep(Duration::from_millis(75));
+        thread::sleep(Duration::from_millis(15));
     }
 }

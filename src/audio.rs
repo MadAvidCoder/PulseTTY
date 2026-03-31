@@ -96,10 +96,15 @@ impl AudioState {
         }
     }
 
-    pub fn from_microphone() -> Self {
+    pub fn from_microphone(device_selector: Option<&str>) -> Self {
         wasapi::initialize_mta().unwrap();
         let enumerator = wasapi::DeviceEnumerator::new().unwrap();
-        let device = enumerator.get_default_device(&wasapi::Direction::Capture).unwrap();
+
+        let device = match device_selector {
+            Some(sel) => pick_capture_device(Some(sel)),
+            None => enumerator.get_default_device(&wasapi::Direction::Capture).unwrap(),
+        };
+
         let mut audio_client = device.get_iaudioclient().unwrap();
         let format = audio_client.get_mixformat().unwrap();
         audio_client.initialize_client(
@@ -357,4 +362,58 @@ fn pick_render_device(selector: Option<&str>) -> wasapi::Device {
 
     eprintln!("No device matched '{selstr}'. Run `pulsetty --list-devices` to get a list of available devices.", selstr=sel);
     panic!("No matching --device")
+}
+
+pub fn list_capture_devices() {
+    wasapi::initialize_mta().unwrap();
+    let enumerator = wasapi::DeviceEnumerator::new().unwrap();
+
+    let collection = enumerator.get_device_collection(&wasapi::Direction::Capture).unwrap();
+    let devices_count = collection.get_nbr_devices().unwrap_or(0);
+
+    if devices_count == 0 {
+        println!("No Capture Devices Found!");
+        return;
+    }
+
+    for i in 0..devices_count {
+        if let Ok(device) = collection.get_device_at_index(i) {
+            let name = device.get_friendlyname().unwrap_or_else(|_| "<unknown>".to_string());
+            println!("{i}: {name}");
+        }
+    }
+}
+
+fn pick_capture_device(selector: Option<&str>) -> wasapi::Device {
+    wasapi::initialize_mta().unwrap();
+    let enumerator = wasapi::DeviceEnumerator::new().unwrap();
+
+    let Some(sel) = selector else {
+        return enumerator.get_default_device(&wasapi::Direction::Capture).unwrap();
+    };
+
+    let device_collection = enumerator.get_device_collection(&wasapi::Direction::Capture).unwrap();
+
+    if let Ok(index) = sel.parse::<usize>() {
+        if let Ok(device) = device_collection.get_device_at_index(index as u32) {
+            return device;
+        }
+        eprintln!("Invalid device index: {idx}. Run `pulsetty --list-mics` to get a list of available microphones.", idx=index);
+        panic!("Invalid --mic index");
+    }
+
+    let search_str = sel.to_lowercase();
+    let devices_count = device_collection.get_nbr_devices().unwrap_or(0);
+
+    for i in 0..devices_count {
+        if let Ok(device) = device_collection.get_device_at_index(i) {
+            let name = device.get_friendlyname().unwrap_or_else(|_| "<unknown>".to_string());
+            if name.as_str().to_lowercase().as_str().contains(&search_str) {
+                return device;
+            }
+        }
+    }
+
+    eprintln!("No device matched '{selstr}'. Run `pulsetty --list-mics` to get a list of available microphones.", selstr=sel);
+    panic!("No matching --mic")
 }

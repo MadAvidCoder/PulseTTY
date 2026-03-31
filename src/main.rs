@@ -37,11 +37,17 @@ struct Args {
     #[arg(long)]
     compact: bool,
 
-    #[arg(long)]
+    #[arg(long, conflicts_with = "mic", conflicts_with = "file")]
     device: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, conflicts_with = "list_mics")]
     list_devices: bool,
+
+    #[arg(long, conflicts_with = "file", num_args = 0..=1, default_missing_value = "", conflicts_with="device")]
+    mic: Option<String>,
+
+    #[arg(long, conflicts_with = "list_devices")]
+    list_mics: bool,
 
     #[arg(long, default_value_t = 15, help = "Frame delay (in milliseconds). Lower = Smoother animation, but higher CPU usage")]
     frame_ms: u64,
@@ -54,6 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         audio::list_render_devices();
         return Ok(())
     };
+    if args.list_mics {
+        audio::list_capture_devices();
+        return Ok(());
+    }
 
     let columns = args.columns;
     let height = args.height;
@@ -79,15 +89,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut fft_state = fft::FFTState::new(columns);
 
-   let mut audio_state = match file {
-       Some(path) => {
-           match path.as_path().to_str() {
-               Some(s) => audio::AudioState::from_file(s),
-               None => audio::AudioState::from_system(args.device.as_deref()),
-           }
-       },
-       None => audio::AudioState::from_system(args.device.as_deref()),
-    };
+   let mut audio_state = if let Some(path) = file {
+       audio::AudioState::from_file(path.to_string_lossy().as_ref())
+   } else if let Some(sel) = args.mic.as_deref() {
+       let sel = if sel.is_empty() { None } else { Some(sel) };
+       audio::AudioState::from_microphone(sel)
+   } else {
+       audio::AudioState::from_system(args.device.as_deref())
+   };
 
     let mut cur_values: Vec<f32> = vec![0f32; columns];
     let mut peaks: Vec<f32> = vec![0f32; columns];
@@ -96,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         audio_state.next_sample().expect("Error fetching sample.");
 
-        match audio_state.source {
+        match &mut audio_state.source {
             audio::AudioSource::File { format: _, sample_buf: _, decoder: _, track_id: _ } => {
                 if audio_state.buffer.len() >= FFT_SIZE {
                     let chunk: Vec<Complex<f32>> = audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..]
@@ -107,35 +116,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
 
-            audio::AudioSource::System {format: _, capture_client: _, mut readpos } => {
+            audio::AudioSource::System {format: _, capture_client: _, readpos } => {
                 if audio_state.buffer.len() >= FFT_SIZE {
                     let end = audio_state.buffer.len();
-                    if readpos + HOP_SIZE <= end {
-                        readpos = end.saturating_sub(FFT_SIZE);
+                    if *readpos + HOP_SIZE <= end {
+                        *readpos = end.saturating_sub(FFT_SIZE);
                     }
 
-                    let chunk = &audio_state.buffer[readpos..readpos+FFT_SIZE];
+                    let chunk = &audio_state.buffer[*readpos..*readpos+FFT_SIZE];
                     let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
                     let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
                     target_values = fft_state.transform(scaled, audio_state.sample_rate);
 
-                    readpos += HOP_SIZE;
+                    *readpos += HOP_SIZE;
                 }
             },
 
-            audio::AudioSource::Microphone {format: _, capture_client: _, mut readpos } => {
+            audio::AudioSource::Microphone {format: _, capture_client: _, readpos } => {
                 if audio_state.buffer.len() >= FFT_SIZE {
                     let end = audio_state.buffer.len();
-                    if readpos + HOP_SIZE <= end {
-                        readpos = end.saturating_sub(FFT_SIZE);
+                    if *readpos + HOP_SIZE <= end {
+                        *readpos = end.saturating_sub(FFT_SIZE);
                     }
 
-                    let chunk = &audio_state.buffer[readpos..readpos+FFT_SIZE];
+                    let chunk = &audio_state.buffer[*readpos..*readpos+FFT_SIZE];
                     let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
                     let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
                     target_values = fft_state.transform(scaled, audio_state.sample_rate);
 
-                    readpos += HOP_SIZE;
+                    *readpos += HOP_SIZE;
                 }
             },
         }

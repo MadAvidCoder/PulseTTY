@@ -8,28 +8,90 @@ use std::time::Duration;
 use std::io::{stdout, Write};
 use crossterm::{ExecutableCommand, terminal};
 use rustfft::num_complex::Complex;
+use clap::Parser;
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
 const HOP_SIZE: usize = FFT_SIZE / 2;
-const BARS: usize = 20;
-const HEIGHT: usize = 16;
-const FRAME_MS: u64 = 15;
 
+#[derive(Parser)]
+#[command(name = "PulseTTY", about = "A terminal-based music visualiser", version = "1.1.0", author = "MadAvidCoder")]
+struct Args {
+    file: Option<std::path::PathBuf>,
+
+    #[arg(short = 'c', long, default_value_t = 20, help = "The number of frequency columns. Must be at least 2.")]
+    columns: usize,
+
+    #[arg(short = 'H', long, default_value_t = 16, help = "The height (in text rows) of each column. Must be at least 2.")]
+    height: usize,
+
+    #[arg(short = 'g', long, default_value_t = 1.0)]
+    gain: f32,
+
+    #[arg(long)]
+    no_color: bool,
+
+    #[arg(long)]
+    ascii: bool,
+
+    #[arg(long)]
+    compact: bool,
+
+    #[arg(long)]
+    device: Option<String>,
+
+    #[arg(long)]
+    list_devices: bool,
+
+    #[arg(long, default_value_t = 15, help = "Frame delay (in milliseconds). Lower = Smoother animation, but higher CPU usage")]
+    frame_ms: u64,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    if args.list_devices {
+        audio::list_render_devices();
+        return Ok(())
+    };
+
+    let columns = args.columns;
+    let height = args.height;
+    let file = args.file;
+    let frame_ms = args.frame_ms;
+    let gain = args.gain;
+
+    if columns < 2 {
+        return Err("--columns must be at least 2".into());
+    }
+    if height < 2 {
+        return Err("--height must be at least 2".into());
+    }
+    if frame_ms == 0 {
+        return Err("--frame-ms cannot be 0".into());
+    }
+    if !gain.is_finite() || gain == 0.0 {
+        return Err("--gain cannot be 0".into());
+    }
+
     let mut stdout = stdout();
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
-    let mut fft_state = fft::FFTState::new(BARS);
+    let mut fft_state = fft::FFTState::new(columns);
 
-    // let mut audio_state = audio::AudioState::from_file("test.wav");
-    // let mut audio_state = audio::AudioState::from_system();
-    let mut audio_state = audio::AudioState::from_microphone();
+   let mut audio_state = match file {
+       Some(path) => {
+           match path.as_path().to_str() {
+               Some(s) => audio::AudioState::from_file(s),
+               None => audio::AudioState::from_system(args.device.as_deref()),
+           }
+       },
+       None => audio::AudioState::from_system(args.device.as_deref()),
+    };
 
-    let mut cur_values: Vec<f32> = vec![0f32; BARS];
-    let mut peaks: Vec<f32> = vec![0f32; BARS];
-    let mut target_values: Vec<f32> = vec![0f32; BARS];
+    let mut cur_values: Vec<f32> = vec![0f32; columns];
+    let mut peaks: Vec<f32> = vec![0f32; columns];
+    let mut target_values: Vec<f32> = vec![0f32; columns];
 
     loop {
         audio_state.next_sample().expect("Error fetching sample.");
@@ -78,12 +140,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         }
 
+        for v in &mut target_values {
+            *v = (*v * gain).clamp(0.0, 100.0);
+        }
+
         fft_state.smooth(&target_values, &mut cur_values, &mut peaks);
 
-        render::draw(&mut stdout, &cur_values, &peaks, HEIGHT)?;
+        render::draw(&mut stdout, &cur_values, &peaks, height, args.ascii, args.compact, args.no_color)?;
 
         stdout.flush()?;
 
-        thread::sleep(Duration::from_millis(FRAME_MS));
+        thread::sleep(Duration::from_millis(frame_ms));
     }
 }

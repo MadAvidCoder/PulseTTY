@@ -60,9 +60,8 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
     let mel_max = hz_to_mel(sample_rate / 2.0);
 
     for i in 0..20 {
-        // TODO: tweak bass dominance
-        let mel_start = mel_min + (mel_max - mel_min) * (i as f32 / 20.0);//.powf(1.5);
-        let mel_end   = mel_min + (mel_max - mel_min) * ((i as f32 + 1.0) / 20.0);//.powf(1.5);
+        let mel_start = mel_min + (mel_max - mel_min) * (i as f32 / 20.0).powf(1.15);
+        let mel_end   = mel_min + (mel_max - mel_min) * ((i as f32 + 1.0) / 20.0).powf(1.15);
 
         let freq_start = mel_to_hz(mel_start);
         let freq_end   = mel_to_hz(mel_end);

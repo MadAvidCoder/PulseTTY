@@ -7,6 +7,7 @@ use crate::FFT_SIZE;
 use crate::helpers::{hz_to_mel, mel_to_hz};
 
 static WINDOW: OnceLock<Vec<f32>> = OnceLock::new();
+static mut PREV: [f32; 20] = [0.0; 20];
 
 pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32, normalise_db: bool) -> Vec<f32> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
@@ -43,6 +44,17 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
         .map(|c| c.re * c.re + c.im * c.im)
         .collect();
 
+    let mut smoothed_magnitudes = magnitudes.clone();
+
+    for i in 1..(magnitudes.len() - 1) {
+        smoothed_magnitudes[i] =
+            magnitudes[i] * 0.6 +
+                magnitudes[i - 1] * 0.2 +
+                magnitudes[i + 1] * 0.2;
+    }
+
+    let magnitudes = smoothed_magnitudes;
+
     let fft_bins = FFT_SIZE / 2;
     let mel_min = hz_to_mel(20.0);
     let mel_max = hz_to_mel(sample_rate / 2.0);
@@ -55,13 +67,18 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
         let freq_start = mel_to_hz(mel_start);
         let freq_end   = mel_to_hz(mel_end);
 
-        let start_bin = (freq_start * FFT_SIZE as f32 / sample_rate) as usize;
-        let end_bin= (freq_end * FFT_SIZE as f32 / sample_rate) as usize;
+        let mut start_bin = (freq_start * FFT_SIZE as f32 / sample_rate) as usize;
+        let mut end_bin= (freq_end * FFT_SIZE as f32 / sample_rate) as usize;
 
-        let start_bin = min(start_bin, fft_bins - 1);
-        let end_bin = min(max(end_bin, start_bin + 1), fft_bins);
+        start_bin = min(start_bin, fft_bins - 1);
+        end_bin = min(max(end_bin, start_bin + 1), fft_bins);
 
         let pad = (end_bin - start_bin) / 2;
+
+        if i < 4 {
+            start_bin = start_bin.saturating_sub(2);
+            end_bin = (end_bin + 2).min(fft_bins);
+        }
 
         let start = start_bin.saturating_sub(pad);
         let end = (end_bin + pad).min(fft_bins);
@@ -84,12 +101,13 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
             weight_sum += weight;
         }
 
-        let value = if weight_sum > 0.0 {
+        let avg = if weight_sum > 0.0 {
             sum / weight_sum
-        } else {
-            0.0
-        };
+        } else { 0.0 };
+        let peak = slice.iter().cloned().fold(0.0, f32::max);
+        let mut value = avg * 0.3 + peak * 0.7;
 
+        value = (value - 0.02).max(0.0);
         // let noise_floor = 0.08;
         //
         // value = (value - noise_floor).max(0.0) / (1.0 - noise_floor);
@@ -112,6 +130,21 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
 
         let weight = 0.75 + 0.2 * freq;
         value *= weight;
+
+        unsafe {
+            let delta = value - PREV[i];
+
+            let transient = delta.max(0.0);
+            value = (value * 0.6 + transient * 1.4) / 1.3;
+
+            PREV[i] = value;
+
+            let stable = PREV[i] * 0.8 + value * 0.2;
+
+            if stable < value {
+                value = stable;
+            }
+        }
 
         target_values[i] = value * 100.0;
     }
@@ -139,8 +172,8 @@ pub fn smooth(target_values: &Vec<f32>, cur_values: &mut Vec<f32>, peaks: &mut V
 
     for i in 0..20 {
         let freq = i as f32 / 19.0;
-        let attack = 0.3;
-        let release = 0.08;
+        let attack = if i < 5 { 0.6 } else { 0.3 };
+        let release = 0.03;
 
         let coeff = if smoothed_targets[i] > cur_values[i] {
             attack

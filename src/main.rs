@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let chunk = &rolling_buffer[readpos..readpos+FFT_SIZE];
             let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
             let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
-            target_values = fft::transform(&fft, scaled, format.get_samplespersec() as f32, false);
+            target_values = fft::transform(&fft, scaled, format.get_samplespersec() as f32);
 
             readpos += hop_size;
         }

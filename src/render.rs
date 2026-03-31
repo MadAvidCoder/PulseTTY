@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::io::{self, Write};
 use crossterm::{QueueableCommand, cursor, style};
 use crossterm::style::{SetForegroundColor, Color};
-use rustfft::num_traits::Saturating;
 
 pub fn draw(stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
     let mut lines = vec![String::new(); 16];

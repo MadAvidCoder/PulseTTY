@@ -9,7 +9,7 @@ use crate::helpers::{hz_to_mel, mel_to_hz};
 static WINDOW: OnceLock<Vec<f32>> = OnceLock::new();
 static mut PREV: [f32; 20] = [0.0; 20];
 
-pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32, normalise_db: bool) -> Vec<f32> {
+pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_rate: f32) -> Vec<f32> {
     let mut target_values: Vec<f32> = vec![0f32; 20];
     for (sample, w) in chunk.iter_mut()
         .zip(

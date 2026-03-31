@@ -15,7 +15,11 @@ pub enum AudioSource {
         capture_client: AudioCaptureClient,
         readpos: usize,
     },
-    Microphone {},
+    Microphone {
+        format: WaveFormat,
+        capture_client: AudioCaptureClient,
+        readpos: usize,
+    },
     File {
         format: Box<dyn symphonia::core::formats::FormatReader>,
         sample_buf: Option<SampleBuffer<f32>>,
@@ -81,19 +85,31 @@ impl AudioState {
 
 
         Self {
-            sample_rate: 44100f32,
+            sample_rate: format.get_samplespersec() as f32,
             buffer: Vec::new(),
             source: AudioSource::System { capture_client, format, readpos: 0usize },
         }
     }
 
     pub fn from_microphone() -> Self {
-        unimplemented!();
+        wasapi::initialize_mta().unwrap();
+        let enumerator = wasapi::DeviceEnumerator::new().unwrap();
+        let device = enumerator.get_default_device(&wasapi::Direction::Capture).unwrap();
+        let mut audio_client = device.get_iaudioclient().unwrap();
+        let format = audio_client.get_mixformat().unwrap();
+        audio_client.initialize_client(
+            &format,
+            &wasapi::Direction::Capture,
+            &wasapi::StreamMode::PollingShared {autoconvert: true, buffer_duration_hns: 100000},
+        ).unwrap();
+        let capture_client = audio_client.get_audiocaptureclient().unwrap();
+        audio_client.start_stream().unwrap();
+
 
         Self {
-            sample_rate: 44100f32,
+            sample_rate: format.get_samplespersec() as f32,
             buffer: Vec::new(),
-            source: AudioSource::Microphone {},
+            source: AudioSource::System { capture_client, format, readpos: 0usize },
         }
     }
 
@@ -226,9 +242,60 @@ impl AudioState {
                 Ok(())
             },
 
-            AudioSource::Microphone {} => {
-                unimplemented!()
-            }
+            AudioSource::Microphone {
+                capture_client,
+                format,
+                readpos
+            } => {
+                let mut got_wasapi_samples= false;
+                self.sample_rate = format.get_samplespersec() as f32;
+
+                while let Some(packet_size) = capture_client.get_next_packet_size().unwrap() {
+                    if packet_size == 0 {
+                        break;
+                    }
+
+                    let bytes_per_frame = format.get_nchannels() as usize * (format.get_validbitspersample() as usize / 8);
+                    let mut buf = vec![0u8; (packet_size as usize) * bytes_per_frame];
+
+                    let (frames_read, _) = capture_client.read_from_device(&mut buf).unwrap();
+                    let bytes_read = frames_read as usize * bytes_per_frame;
+                    let raw_bytes = &buf[..bytes_read];
+
+                    let samples: Vec<f32> = match format.get_subformat().unwrap() {
+                        wasapi::SampleType::Float => unsafe {
+                            std::slice::from_raw_parts(raw_bytes.as_ptr() as *const f32, bytes_read / 4).to_vec()
+                        },
+                        wasapi::SampleType::Int => unsafe {
+                            std::slice::from_raw_parts(raw_bytes.as_ptr() as *const i16, bytes_read / 2)
+                                .iter()
+                                .map(|&v| v as f32 / i16::MAX as f32)
+                                .collect()
+                        },
+                    };
+
+                    let mono: Vec<f32> = if format.get_nchannels() == 2 {
+                        (&samples).chunks(2).map(|c| (c[0] + c[1]) * 0.5).collect()
+                    } else {
+                        samples
+                    };
+
+                    self.buffer.extend(mono);
+                    got_wasapi_samples = true;
+                }
+
+                if !got_wasapi_samples {
+                    let silence_length = (format.get_samplespersec() as f32 * 0.075) as usize;
+                    self.buffer.extend(std::iter::repeat(0f32).take(silence_length));
+                }
+
+                if self.buffer.len() > FFT_SIZE * 2 {
+                    self.buffer.drain(0..*readpos);
+                    *readpos = 0;
+                }
+
+                Ok(())
+            },
         }
     }
 }

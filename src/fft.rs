@@ -119,32 +119,24 @@ pub fn transform(fft: &Arc<dyn Fft<f32>>, mut chunk: Vec<Complex<f32>>, sample_r
         //     value = 0.0;
         // }
 
-        let rms = value.max(1e-6);
-        let db = 20.0 * rms.log10();
+        // let rms = value.max(1e-6);
+        // let db = 20.0 * rms.log10();
+        //
+        // let mut value = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
+        //
+        // value = value.powf(1.5);
 
-        let mut value = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
-
-        value = value.powf(1.5);
+        let mut value = value.sqrt().clamp(0.0, 1.0);
 
         let freq = i as f32 / 19.0;
 
         let weight = 0.75 + 0.2 * freq;
         value *= weight;
 
-        unsafe {
-            let delta = value - PREV[i];
-
-            let transient = delta.max(0.0);
-            value = (value * 0.6 + transient * 1.4) / 1.3;
-
-            PREV[i] = value;
-
-            let stable = PREV[i] * 0.8 + value * 0.2;
-
-            if stable < value {
-                value = stable;
-            }
-        }
+        let prev = unsafe { PREV[i] };
+        let delta = (value - prev).max(0.0);
+        let value = value * 0.7 + delta * 0.8;
+        unsafe { PREV[i] = value; }
 
         target_values[i] = value * 100.0;
     }

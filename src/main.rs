@@ -8,49 +8,58 @@ use std::time::Duration;
 use std::io::{stdout, Write};
 use crossterm::{ExecutableCommand, terminal};
 use rustfft::num_complex::Complex;
-use clap::Parser;
+use clap::{Parser, ValueHint, ArgAction};
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
 const HOP_SIZE: usize = FFT_SIZE / 2;
 
 #[derive(Parser)]
-#[command(name = "PulseTTY", about = "A terminal-based music visualiser", version = "1.1.0", author = "MadAvidCoder")]
+#[command(
+    name = "PulseTTY",
+    about = "A terminal-based music visualiser (system audio, microphone, or file)",
+    version = "1.1.0",
+    author = "MadAvidCoder",
+    disable_help_subcommand = true,
+    arg_required_else_help = false,
+    after_help = "Examples:\n  pulsetty\n  pulsetty song.mp3\n  pulsetty --device 0\n  pulsetty --list-devices\n  pulsetty --mic --gain 1.5\n  pulsetty --list-mics\n  pulsetty --compact --ascii --no-colour\n  pulsetty --columns 28 --height 32"
+)]
 struct Args {
+    #[arg(value_name = "FILE", value_hint = ValueHint::FilePath)]
     file: Option<std::path::PathBuf>,
 
-    #[arg(short = 'c', long, default_value_t = 20, help = "The number of frequency columns. Must be at least 2.")]
+    #[arg(short = 'c', long, default_value_t = 20, value_name = "N", help_heading = "Visual Options", help = "The number of frequency columns/bars. (Must be >= 2).")]
     columns: usize,
 
-    #[arg(short = 'H', long, default_value_t = 16, help = "The height (in text rows) of each column. Must be at least 2.")]
+    #[arg(short = 'H', long, default_value_t = 16, value_name = "ROWS", help_heading = "Visual Options", help = "The height (in terminal rows) of each column. (Must be >= 2).")]
     height: usize,
 
-    #[arg(short = 'g', long, default_value_t = 1.0)]
+    #[arg(short = 'g', long, value_name = "FLOAT", help = "Output gain multiplier.", help_heading = "FFT Options", default_value_t = 1.0)]
     gain: f32,
 
-    #[arg(long)]
-    no_color: bool,
+    #[arg(long, alias="no_color", action = ArgAction::SetTrue, help_heading = "Visual Options", help = "Disables ANSI colours.")]
+    no_colour: bool,
 
-    #[arg(long)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Visual Options", help = "Uses ASCII characters, instead of Unicode blocks.")]
     ascii: bool,
 
-    #[arg(long)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Visual Options", help = "Enables compact mode (1 character per bar).")]
     compact: bool,
 
-    #[arg(long, conflicts_with = "mic", conflicts_with = "file")]
+    #[arg(long, default_value_t = 15, value_name = "MS", help_heading = "FFT Options", help = "Frame delay (in milliseconds). Lower = Smoother, but higher CPU")]
+    frame_ms: u64,
+
+    #[arg(short='d', long, value_name = "IDX", help_heading = "Input Selection", help = "Output device to capture from (index or substring). Use --list-devices to view all options.", conflicts_with = "mic", conflicts_with = "file")]
     device: Option<String>,
 
-    #[arg(long, conflicts_with = "list_mics")]
+    #[arg(long, help_heading = "Input Selection", help = "List all available output devices and exit.", conflicts_with = "list_mics")]
     list_devices: bool,
 
-    #[arg(long, conflicts_with = "file", num_args = 0..=1, default_missing_value = "", conflicts_with="device")]
+    #[arg(short = 'm', long, conflicts_with = "file", num_args = 0..=1, default_missing_value = "", conflicts_with="device", value_name = "IDX", help_heading = "Input Selection", help = "Use microphone input (optional selector: index or substring). Use --list-mics to view availableo")]
     mic: Option<String>,
 
-    #[arg(long, conflicts_with = "list_devices")]
+    #[arg(long, help_heading = "Input Selection", help = "List all available input devices and exit.", conflicts_with = "list_devices")]
     list_mics: bool,
-
-    #[arg(long, default_value_t = 15, help = "Frame delay (in milliseconds). Lower = Smoother animation, but higher CPU usage")]
-    frame_ms: u64,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -155,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fft_state.smooth(&target_values, &mut cur_values, &mut peaks);
 
-        render::draw(&mut stdout, &cur_values, &peaks, height, args.ascii, args.compact, args.no_color)?;
+        render::draw(&mut stdout, &cur_values, &peaks, height, args.ascii, args.compact, args.no_colour)?;
 
         stdout.flush()?;
 

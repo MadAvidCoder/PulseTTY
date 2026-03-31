@@ -6,19 +6,32 @@ use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+use wasapi::{self, AudioCaptureClient, WaveFormat};
 use crate::FFT_SIZE;
 
+pub enum AudioSource {
+    System {
+        format: WaveFormat,
+        capture_client: AudioCaptureClient,
+        readpos: usize,
+    },
+    Microphone {},
+    File {
+        format: Box<dyn symphonia::core::formats::FormatReader>,
+        sample_buf: Option<SampleBuffer<f32>>,
+        decoder: Box<dyn symphonia::core::codecs::Decoder>,
+        track_id: u32,
+    },
+}
+
 pub struct AudioState {
-    format: Box<dyn symphonia::core::formats::FormatReader>,
-    decoder: Box<dyn symphonia::core::codecs::Decoder>,
-    track_id: u32,
+    pub source: AudioSource,
     pub sample_rate: f32,
-    sample_buf: Option<SampleBuffer<f32>>,
     pub buffer: Vec<f32>,
 }
 
 impl AudioState {
-    pub fn new(path: &str) -> Self {
+    pub fn from_file(path: &str) -> Self {
         let file = Box::new(File::open(path).expect("Failed to open file."));
         let mss = MediaSourceStream::new(file, MediaSourceStreamOptions::default());
 
@@ -46,78 +59,176 @@ impl AudioState {
         let track_id = track.id;
 
         Self {
-            format,
-            decoder,
-            track_id,
+            source: AudioSource::File { format, sample_buf: None, decoder, track_id },
             sample_rate: 44100f32,
-            sample_buf: None,
             buffer: Vec::new(),
         }
     }
 
+    pub fn from_system() -> Self {
+        wasapi::initialize_mta().unwrap();
+        let enumerator = wasapi::DeviceEnumerator::new().unwrap();
+        let device = enumerator.get_default_device(&wasapi::Direction::Render).unwrap();
+        let mut audio_client = device.get_iaudioclient().unwrap();
+        let format = audio_client.get_mixformat().unwrap();
+        audio_client.initialize_client(
+            &format,
+            &wasapi::Direction::Capture,
+            &wasapi::StreamMode::PollingShared {autoconvert: true, buffer_duration_hns: 100000},
+        ).unwrap();
+        let capture_client = audio_client.get_audiocaptureclient().unwrap();
+        audio_client.start_stream().unwrap();
+
+
+        Self {
+            sample_rate: 44100f32,
+            buffer: Vec::new(),
+            source: AudioSource::System { capture_client, format, readpos: 0usize },
+        }
+    }
+
+    pub fn from_microphone() -> Self {
+        unimplemented!();
+
+        Self {
+            sample_rate: 44100f32,
+            buffer: Vec::new(),
+            source: AudioSource::Microphone {},
+        }
+    }
+
     pub fn next_sample(&mut self) -> Result<(), Error> {
-        let packet = match self.format.next_packet() {
-            Ok(packet) => packet,
-            Err(Error::ResetRequired) => {
-                unimplemented!();
-            }
-            Err(Error::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(());
-            }
-            Err(err) => {
-                eprintln!("Error reading packet: {}", err);
-                return Err(err.into());
-            }
-        };
+        match &mut self.source {
+            AudioSource::File {
+                format,
+                decoder,
+                track_id,
+                sample_buf,
+            } => {
+                let packet = match format.next_packet() {
+                    Ok(packet) => packet,
+                    Err(Error::ResetRequired) => {
+                        unimplemented!();
+                    }
+                    Err(Error::IoError(err))
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+                        return Ok(());
+                    }
+                    Err(err) => {
+                        eprintln!("Error reading packet: {}", err);
+                        return Err(err.into());
+                    }
+                };
 
-        if packet.track_id() != self.track_id {
-            return Ok(());
-        }
-
-        while !self.format.metadata().is_latest() {
-            self.format.metadata().pop();
-        }
-
-        match self.decoder.decode(&packet) {
-            Ok(decoded) => {
-                if self.sample_buf.is_none() {
-                    self.sample_rate = decoded.spec().rate as f32;
-                    let spec = *decoded.spec();
-                    let duration = decoded.capacity() as u64;
-                    self.sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
+                if packet.track_id() != *track_id {
+                    return Ok(());
                 }
 
-                if let Some(buf) = &mut self.sample_buf {
-                    buf.copy_interleaved_ref(decoded);
+                while !format.metadata().is_latest() {
+                    format.metadata().pop();
+                }
 
-                    let samples = buf.samples();
-                    for frame in samples.chunks(2) {
-                        // let mono = frame[0];
+                match decoder.decode(&packet) {
+                    Ok(decoded) => {
+                        if sample_buf.is_none() {
+                            self.sample_rate = decoded.spec().rate as f32;
+                            let spec = *decoded.spec();
+                            let duration = decoded.capacity() as u64;
+                            *sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
+                        }
 
-                        // proper mono averaging
-                        let mono: f32 = if frame.len() == 2 {
-                            (frame[0] + frame[1]) * 0.5
-                        } else {
-                            frame[0]
-                        };
-                        self.buffer.push(mono);
+                        if let Some(buf) = sample_buf {
+                            buf.copy_interleaved_ref(decoded);
+
+                            let samples = buf.samples();
+                            for frame in samples.chunks(2) {
+                                // let mono = frame[0];
+
+                                // proper mono averaging
+                                let mono: f32 = if frame.len() == 2 {
+                                    (frame[0] + frame[1]) * 0.5
+                                } else {
+                                    frame[0]
+                                };
+                                self.buffer.push(mono);
+                            }
+                            if self.buffer.len() > FFT_SIZE * 4 {
+                                self.buffer.drain(0..self.buffer.len() - FFT_SIZE * 2);
+                            }
+                        }
                     }
-                    if self.buffer.len() > FFT_SIZE * 4 {
-                        self.buffer.drain(0..self.buffer.len() - FFT_SIZE * 2);
+                    Err(Error::IoError(_)) => {
+                        {};
+                    }
+                    Err(Error::DecodeError(_)) => {
+                        {};
+                    }
+                    Err(err) => {
+                        eprintln!("Unrecoverable decode error: {}", err);
+                        return Err(err.into());
                     }
                 }
-            }
-            Err(Error::IoError(_)) => {
-                {};
-            }
-            Err(Error::DecodeError(_)) => {
-                {};
-            }
-            Err(err) => {
-                eprintln!("Unrecoverable decode error: {}", err);
-                return Err(err.into());
+                Ok(())
+            },
+
+            AudioSource::System {
+                capture_client,
+                format,
+                readpos
+            } => {
+                let mut got_wasapi_samples= false;
+                self.sample_rate = format.get_samplespersec() as f32;
+
+                while let Some(packet_size) = capture_client.get_next_packet_size().unwrap() {
+                    if packet_size == 0 {
+                        break;
+                    }
+
+                    let bytes_per_frame = format.get_nchannels() as usize * (format.get_validbitspersample() as usize / 8);
+                    let mut buf = vec![0u8; (packet_size as usize) * bytes_per_frame];
+
+                    let (frames_read, _) = capture_client.read_from_device(&mut buf).unwrap();
+                    let bytes_read = frames_read as usize * bytes_per_frame;
+                    let raw_bytes = &buf[..bytes_read];
+
+                    let samples: Vec<f32> = match format.get_subformat().unwrap() {
+                        wasapi::SampleType::Float => unsafe {
+                            std::slice::from_raw_parts(raw_bytes.as_ptr() as *const f32, bytes_read / 4).to_vec()
+                        },
+                        wasapi::SampleType::Int => unsafe {
+                            std::slice::from_raw_parts(raw_bytes.as_ptr() as *const i16, bytes_read / 2)
+                                .iter()
+                                .map(|&v| v as f32 / i16::MAX as f32)
+                                .collect()
+                        },
+                    };
+
+                    let mono: Vec<f32> = if format.get_nchannels() == 2 {
+                        (&samples).chunks(2).map(|c| (c[0] + c[1]) * 0.5).collect()
+                    } else {
+                        samples
+                    };
+
+                    self.buffer.extend(mono);
+                    got_wasapi_samples = true;
+                }
+
+                if !got_wasapi_samples {
+                    let silence_length = (format.get_samplespersec() as f32 * 0.075) as usize;
+                    self.buffer.extend(std::iter::repeat(0f32).take(silence_length));
+                }
+
+                if self.buffer.len() > FFT_SIZE * 2 {
+                    self.buffer.drain(0..*readpos);
+                    *readpos = 0;
+                }
+
+                Ok(())
+            },
+
+            AudioSource::Microphone {} => {
+                unimplemented!()
             }
         }
-        Ok(())
     }
 }

@@ -40,7 +40,7 @@ impl Renderer {
             RenderMode::Bars => self.draw_bars(stdout, cur_values, peaks),
             RenderMode::Line => self.draw_line(stdout, cur_values, peaks),
             RenderMode::Spectrogram => unimplemented!(),
-            RenderMode::Vu => unimplemented!(),
+            RenderMode::Vu => self.draw_vu(stdout, cur_values, peaks),
         }
     }
 
@@ -189,6 +189,71 @@ impl Renderer {
             }
             stdout.queue(cursor::MoveTo(0, e as u16))?;
             let line: String = row.into_iter().collect();
+            stdout.queue(style::Print(line))?;
+        }
+
+        Ok(())
+    }
+
+    fn draw_vu(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
+        let level = if cur_values.is_empty() {
+            0.0
+        } else {
+            (cur_values.iter().sum::<f32>() / cur_values.len() as f32) * 1.1
+        }.clamp(0.0, 100.0);
+        let level_rows = (level / 100.0 * self.config.height as f32)
+            .round()
+            .clamp(0.0, (self.config.height - 1) as f32) as usize;
+
+        let peak = (peaks.iter().sum::<f32>() / peaks.len() as f32).clamp(0.0, 100.0) * 1.15;
+        let peak_row = (peak / 100.0 * self.config.height as f32)
+            .round()
+            .clamp(0.0, (self.config.height - 1) as f32) as usize;
+        let peak_row = max(peak_row, level_rows+1);
+
+        let mut lines = vec![String::new(); self.config.height];
+
+        for (row, line) in lines.iter_mut().enumerate() {
+            let height = self.config.height - row;
+
+            let filled = height <= level_rows;
+            let is_peak = height == peak_row;
+
+            if self.config.compact {
+                line.push_str(
+                    if is_peak {
+                        if self.config.ascii { "  --" } else { "  ▄▄" }
+                    } else if filled {
+                        if self.config.ascii { "  ##" } else { "  ▒▒" }
+                    } else {
+                        "    "
+                    }
+                )
+            } else {
+                line.push_str(
+                    if is_peak {
+                        if self.config.ascii { "  ------" } else { "  ▄▄▄▄▄▄" }
+                    } else if filled {
+                        if self.config.ascii { "  ######" } else { "  ▒▒▒▒▒▒" }
+                    } else {
+                        "        "
+                    }
+                )
+            }
+        }
+
+        let red = (self.config.height as f32 * 0.2) as usize;
+        let yellow = (self.config.height as f32 * 0.45) as usize;
+
+        for (e, line) in lines.into_iter().enumerate() {
+            if !self.config.no_colour {
+                stdout.queue(SetForegroundColor(match e {
+                    _ if e <= red => Color::Red,
+                    _ if e <= yellow => Color::Yellow,
+                    _ => Color::Green,
+                }))?;
+            }
+            stdout.queue(cursor::MoveTo(0, e as u16))?;
             stdout.queue(style::Print(line))?;
         }
 

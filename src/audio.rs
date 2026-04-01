@@ -8,6 +8,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use wasapi::{self, AudioCaptureClient, WaveFormat};
 use crate::FFT_SIZE;
+use std::path::Path;
 
 pub enum AudioSource {
     System {
@@ -40,7 +41,9 @@ impl AudioState {
         let mss = MediaSourceStream::new(file, MediaSourceStreamOptions::default());
 
         let mut hint = Hint::new();
-        hint.with_extension("mp3");
+        if let Some(extension) = Path::new(path).extension().and_then(|e| e.to_str()) {
+            hint.with_extension(extension);
+        }
         let format_opts = FormatOptions::default();
         let metadata_opts = MetadataOptions::default();
         let decoder_opts = DecoderOptions::default();

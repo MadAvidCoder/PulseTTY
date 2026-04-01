@@ -10,6 +10,7 @@ use std::io::{stdout, Write};
 use crossterm::{ExecutableCommand, terminal};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
+use symphonia::core::errors::Error;
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
@@ -141,7 +142,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut target_values: Vec<f32> = vec![0f32; columns];
 
     loop {
-        audio_state.next_sample().expect("Error fetching sample.");
+        match audio_state.next_sample() {
+            Ok(true) => {},
+            Ok(false) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        }
 
         match &mut audio_state.source {
             audio::AudioSource::File { format: _, sample_buf: _, decoder: _, track_id: _ } => {

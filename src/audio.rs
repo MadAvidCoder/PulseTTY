@@ -123,7 +123,7 @@ impl AudioState {
         }
     }
 
-    pub fn next_sample(&mut self) -> Result<(), Error> {
+    pub fn next_sample(&mut self) -> Result<bool, Error> {
         match &mut self.source {
             AudioSource::File {
                 format,
@@ -138,7 +138,7 @@ impl AudioState {
                     }
                     Err(Error::IoError(err))
                     if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                        return Ok(());
+                        return Ok(false);
                     }
                     Err(err) => {
                         eprintln!("Error reading packet: {}", err);
@@ -147,7 +147,7 @@ impl AudioState {
                 };
 
                 if packet.track_id() != *track_id {
-                    return Ok(());
+                    return Ok(true);
                 }
 
                 while !format.metadata().is_latest() {
@@ -194,7 +194,7 @@ impl AudioState {
                         return Err(err.into());
                     }
                 }
-                Ok(())
+                Ok(true)
             },
 
             AudioSource::System {
@@ -249,7 +249,7 @@ impl AudioState {
                     *readpos = 0;
                 }
 
-                Ok(())
+                Ok(true)
             },
 
             AudioSource::Microphone {
@@ -304,7 +304,7 @@ impl AudioState {
                     *readpos = 0;
                 }
 
-                Ok(())
+                Ok(true)
             },
         }
     }

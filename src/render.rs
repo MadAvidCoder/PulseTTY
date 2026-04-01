@@ -1,9 +1,10 @@
 use std::cmp::max;
 use std::io::{self, Write};
+use clap::ValueEnum;
 use crossterm::{QueueableCommand, cursor, style};
 use crossterm::style::{SetForegroundColor, Color};
-use rustfft::num_traits::Saturating;
 
+#[derive(Clone, ValueEnum, Copy, Debug)]
 pub enum RenderMode {
     Bars,
     Line,

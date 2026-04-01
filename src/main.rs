@@ -22,11 +22,14 @@ const HOP_SIZE: usize = FFT_SIZE / 2;
     author = "MadAvidCoder",
     disable_help_subcommand = true,
     arg_required_else_help = false,
-    after_help = "Examples:\n  pulsetty\n  pulsetty song.mp3\n  pulsetty --device 0\n  pulsetty --list-devices\n  pulsetty --mic --gain 1.5\n  pulsetty --list-mics\n  pulsetty --compact --ascii --no-colour\n  pulsetty --columns 28 --height 32"
+    after_help = "Examples:\n  pulsetty\n  pulsetty song.mp3\n  pulsetty --mode line\n  pulsetty --device 0\n  pulsetty --list-devices\n  pulsetty --mic --gain 1.5\n  pulsetty --compact --ascii --no-colour\n  pulsetty --columns 28 --height 32"
 )]
 struct Args {
     #[arg(value_name = "FILE", value_hint = ValueHint::FilePath)]
     file: Option<std::path::PathBuf>,
+
+    #[arg(short = 'M', value_enum, default_value_t = render::RenderMode::Bars, long, help_heading = "Visual Options", help = "Selects the visualiser mode.")]
+    mode: render::RenderMode,
 
     #[arg(short = 'c', long, default_value_t = 20, value_name = "N", help_heading = "Visual Options", help = "The number of frequency columns/bars. (Must be >= 2).")]
     columns: usize,
@@ -93,19 +96,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("--gain cannot be 0".into());
     }
 
+    let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
+    let cell_width: u16 = if args.compact { 1 } else { 2 };
+    let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
+
     let mut stdout = stdout();
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
+    let mut renderer = render::Renderer::new(args.mode, render::RenderConfig {
+        height,
+        ascii: args.ascii,
+        compact: args.compact,
+        no_colour: args.no_colour,
+        columns,
+        spectrogram_columns,
+    });
+
     let mut fft_state = fft::FFTState::new(columns);
 
-   let mut audio_state = if let Some(path) = file {
+    let mut audio_state = if let Some(path) = file {
        audio::AudioState::from_file(path.to_string_lossy().as_ref())
-   } else if let Some(sel) = args.mic.as_deref() {
+    } else if let Some(sel) = args.mic.as_deref() {
        let sel = if sel.is_empty() { None } else { Some(sel) };
        audio::AudioState::from_microphone(sel)
-   } else {
+    } else {
        audio::AudioState::from_system(args.device.as_deref())
-   };
+    };
 
     let mut cur_values: Vec<f32> = vec![0f32; columns];
     let mut peaks: Vec<f32> = vec![0f32; columns];
@@ -164,7 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fft_state.smooth(&target_values, &mut cur_values, &mut peaks);
 
-        render::draw(&mut stdout, &cur_values, &peaks, height, args.ascii, args.compact, args.no_colour)?;
+        renderer.draw(&mut stdout, &cur_values, &peaks)?;
 
         stdout.flush()?;
 

@@ -49,13 +49,13 @@ struct Args {
     #[arg(long, default_value_t = 15, value_name = "MS", help_heading = "FFT Options", help = "Frame delay (in milliseconds). Lower = Smoother, but higher CPU")]
     frame_ms: u64,
 
-    #[arg(short='d', long, value_name = "IDX", help_heading = "Input Selection", help = "Output device to capture from (index or substring). Use --list-devices to view all options.", conflicts_with = "mic", conflicts_with = "file")]
+    #[arg(short='d', long, value_name = "IDX", help_heading = "Input Selection", help = "Output device to capture from (index or substring). Use --list-devices to view available sources.", conflicts_with = "mic", conflicts_with = "file")]
     device: Option<String>,
 
     #[arg(long, help_heading = "Input Selection", help = "List all available output devices and exit.", conflicts_with = "list_mics")]
     list_devices: bool,
 
-    #[arg(short = 'm', long, conflicts_with = "file", num_args = 0..=1, default_missing_value = "", conflicts_with="device", value_name = "IDX", help_heading = "Input Selection", help = "Use microphone input (optional selector: index or substring). Use --list-mics to view availableo")]
+    #[arg(short = 'm', long, conflicts_with = "file", num_args = 0..=1, default_missing_value = "", conflicts_with="device", value_name = "IDX", help_heading = "Input Selection", help = "Use microphone input (optional selector: index or substring). Use --list-mics to view available mics.")]
     mic: Option<String>,
 
     #[arg(long, help_heading = "Input Selection", help = "List all available input devices and exit.", conflicts_with = "list_devices")]

@@ -3,6 +3,7 @@ mod fft;
 mod audio;
 mod helpers;
 
+use std::cmp::max;
 use std::thread;
 use std::time::Duration;
 use std::io::{stdout, Write};
@@ -31,11 +32,11 @@ struct Args {
     #[arg(short = 'M', value_enum, default_value_t = render::RenderMode::Bars, long, help_heading = "Visual Options", help = "Selects the visualiser mode.")]
     mode: render::RenderMode,
 
-    #[arg(short = 'c', long, default_value_t = 20, value_name = "N", help_heading = "Visual Options", help = "The number of frequency columns/bars. (Must be >= 2).")]
-    columns: usize,
+    #[arg(short = 'c', long, value_name = "N", help_heading = "Visual Options", help = "Overrides the number of frequency columns/bars. If omitted, auto-fits to terminal width. (Must be >= 2)")]
+    columns: Option<usize>,
 
-    #[arg(short = 'H', long, default_value_t = 16, value_name = "ROWS", help_heading = "Visual Options", help = "The height (in terminal rows) of each column. (Must be >= 2).")]
-    height: usize,
+    #[arg(short = 'H', long, value_name = "ROWS", help_heading = "Visual Options", help = "Overrides the height (in terminal rows) of each column. If omitted, auto-fits to terminal height. (Must be >= 2)")]
+    height: Option<usize>,
 
     #[arg(short = 'g', long, value_name = "FLOAT", help = "Output gain multiplier.", help_heading = "FFT Options", default_value_t = 1.0)]
     gain: f32,
@@ -77,26 +78,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let columns = args.columns;
-    let height = args.height;
-    let file = args.file;
-    let frame_ms = args.frame_ms;
-    let gain = args.gain;
-
-    if columns < 2 {
+    if let Some(c) = args.columns && c < 2 {
         return Err("--columns must be at least 2".into());
     }
-    if height < 2 {
+    if let Some(h) = args.height && h < 2 {
         return Err("--height must be at least 2".into());
     }
-    if frame_ms == 0 {
+    if args.frame_ms == 0 {
         return Err("--frame-ms cannot be 0".into());
     }
-    if !gain.is_finite() || gain == 0.0 {
+    if !args.gain.is_finite() || args.gain == 0.0 {
         return Err("--gain cannot be 0".into());
     }
 
     let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
+    let terminal_width = terminal_width as usize;
+    let terminal_height = terminal_height as usize;
+
+    let height = args.height.unwrap_or_else(|| max(terminal_height.saturating_sub(1), 2));
+    let columns = args.columns.unwrap_or_else(|| {
+        match args.mode {
+            render::RenderMode::Spectrogram => (height*2).clamp(16, 128),
+            _ => {
+                let cell_width = if args.compact { 1 } else { 4 };
+                (terminal_width / cell_width).max(2).clamp(8, 128)
+            }
+        }
+    });
+
+    let file = args.file;
+    let frame_ms = args.frame_ms;
+    let gain = args.gain;
+
     let cell_width: u16 = if args.compact { 1 } else { 2 };
     let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
 

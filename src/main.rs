@@ -18,7 +18,7 @@ const HOP_SIZE: usize = FFT_SIZE / 2;
 #[command(
     name = "PulseTTY",
     about = "A terminal-based music visualiser (system audio, microphone, or file)",
-    version = "1.1.0",
+    version = env!("CARGO_PKG_VERSION"),
     author = "MadAvidCoder",
     disable_help_subcommand = true,
     arg_required_else_help = false,

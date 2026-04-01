@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use clap::ValueEnum;
 use crossterm::{QueueableCommand, cursor, style};
 use crossterm::style::{SetForegroundColor, Color};
+use std::collections::VecDeque;
 
 #[derive(Clone, ValueEnum, Copy, Debug)]
 pub enum RenderMode {
@@ -18,20 +19,23 @@ pub struct RenderConfig {
     pub compact: bool,
     pub no_colour: bool,
     pub columns: usize,
+    pub spectrogram_columns: usize,
 }
 
 pub struct Renderer {
     mode: RenderMode,
     config: RenderConfig,
-    history: Vec<Vec<f32>>,
+    history: VecDeque<Vec<f32>>,
 }
 
 impl Renderer {
     pub fn new(mode: RenderMode, config: RenderConfig) -> Self {
+        let q: VecDeque<Vec<f32>> = (0..config.spectrogram_columns).map(|_| vec![0.0; config.columns]).collect();
+
         Self {
             mode,
             config,
-            history: Vec::new(),
+            history: q,
         }
     }
 
@@ -39,7 +43,7 @@ impl Renderer {
         match self.mode {
             RenderMode::Bars => self.draw_bars(stdout, cur_values, peaks),
             RenderMode::Line => self.draw_line(stdout, cur_values, peaks),
-            RenderMode::Spectrogram => unimplemented!(),
+            RenderMode::Spectrogram => self.draw_spectrogram(stdout, cur_values, peaks),
             RenderMode::Vu => self.draw_vu(stdout, cur_values, peaks),
         }
     }
@@ -255,6 +259,95 @@ impl Renderer {
             }
             stdout.queue(cursor::MoveTo(0, e as u16))?;
             stdout.queue(style::Print(line))?;
+        }
+
+        Ok(())
+    }
+
+    fn draw_spectrogram(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
+        if self.history.len() == self.config.spectrogram_columns {
+            self.history.pop_front();
+        }
+        let mut newest = vec![0.0f32; self.config.columns];
+        for i in 0..self.config.columns {
+            newest[i] = cur_values.get(i).copied().unwrap_or(0.0).clamp(0.0, 100.0);
+        }
+        self.history.push_back(newest);
+
+        const ASCII_CHARS: &[char] = &[' ', '.', '-', '=', '+', '*', '#', '%', '@'];
+        const UNICODE_CHARS: &[char] = &[' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+        let gamma: f32 = 0.65;
+
+        let get_glyph = |v: f32, ascii: bool| -> char {
+            if v < 1.5 {
+                return ' ';
+            }
+            let t = (v / 100.0).clamp(0.0, 1.0).powf(gamma);
+
+            if ascii {
+                let index = (t * (ASCII_CHARS.len() as f32 - 1.0)).round() as usize;
+                ASCII_CHARS[index]
+            } else {
+                let index = (t * (UNICODE_CHARS.len() as f32 - 1.0)).round() as usize;
+                UNICODE_CHARS[index]
+            }
+        };
+
+        let get_colour = |v: f32| -> Color {
+            match v {
+                _ if v >= 85.0 => Color::Red,
+                _ if v >= 65.0 => Color::Yellow,
+                _ if v >= 45.0 => Color::Green,
+                _ if v >= 25.0 => Color::Cyan,
+                _ => Color::Blue,
+            }
+        };
+
+        for row in 0..self.config.height {
+            stdout.queue(cursor::MoveTo(0, row as u16))?;
+
+            let t0 = row as f32 / self.config.height as f32;
+            let t1 = (row as f32 + 1.0) / self.config.height as f32;
+
+            let hi0 = 1.0 - t1;
+            let hi1 = 1.0 - t0;
+
+            let mut b0 = (hi0 * self.config.columns as f32).floor() as isize;
+            let mut b1 = (hi1 * self.config.columns as f32).ceil() as isize - 1;
+
+            if b0 < 0 { b0 = 0; }
+            if b1 < 0 { b1 = 0; }
+            if b0 as usize >= self.config.columns { b0 = self.config.columns as isize - 1; }
+            if b1 as usize >= self.config.columns { b1 = self.config.columns as isize - 1; }
+            if b1 < b0 { b1 = b0; }
+
+            for frame in self.history.iter() {
+                let mut sum = 0.0f32;
+                let mut maxv = 0.0f32;
+                let mut n = 0.0f32;
+
+                for bi in b0..=b1 {
+                    let v = frame[bi as usize];
+                    sum += v;
+                    maxv = maxv.max(v);
+                    n += 1.0;
+                }
+
+                let avg = if n > 0.0 { sum / n } else { 0.0 };
+                let v = (avg * 0.65 + maxv * 0.35).clamp(0.0, 100.0);
+
+                if !self.config.no_colour {
+                    stdout.queue(SetForegroundColor(get_colour(v)))?;
+                }
+
+                ;
+                stdout.queue(style::Print(get_glyph(v, self.config.ascii)))?;
+
+                if !self.config.compact {
+                    stdout.queue(style::Print(get_glyph(v, self.config.ascii)))?;
+                }
+            }
         }
 
         Ok(())

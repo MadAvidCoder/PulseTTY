@@ -96,6 +96,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("--gain cannot be 0".into());
     }
 
+    let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
+    let cell_width: u16 = if args.compact { 1 } else { 2 };
+    let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
+
     let mut stdout = stdout();
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
@@ -104,7 +108,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ascii: args.ascii,
         compact: args.compact,
         no_colour: args.no_colour,
-        columns
+        columns,
+        spectrogram_columns,
     });
 
     let mut fft_state = fft::FFTState::new(columns);

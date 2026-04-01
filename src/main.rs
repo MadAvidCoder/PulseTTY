@@ -96,6 +96,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
+    let mut renderer = render::Renderer::new(render::RenderMode::Bars, render::RenderConfig {
+        height,
+        ascii: args.ascii,
+        compact: args.compact,
+        no_colour: args.no_colour,
+        columns
+    });
+
     let mut fft_state = fft::FFTState::new(columns);
 
     let mut audio_state = if let Some(path) = file {
@@ -164,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fft_state.smooth(&target_values, &mut cur_values, &mut peaks);
 
-        render::draw(&mut stdout, &cur_values, &peaks, height, args.ascii, args.compact, args.no_colour)?;
+        renderer.draw(&mut stdout, &cur_values, &peaks)?;
 
         stdout.flush()?;
 

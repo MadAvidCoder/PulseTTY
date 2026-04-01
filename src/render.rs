@@ -115,9 +115,9 @@ impl Renderer {
 
         let mut y_values: Vec<i32> = Vec::new();
         for &v in cur_values {
-            let height = (v / 100.0 * self.config.height.saturating_sub(1) as f32)
+            let height = ((1.0 - (v / 100.0)) * (self.config.height - 1) as f32)
                 .round()
-                .clamp(0.0, (self.config.height.saturating_sub(1)) as f32 ) as i32;
+                .clamp(0.0, (self.config.height - 1) as f32 ) as i32;
 
             y_values.push(height);
         }
@@ -152,7 +152,7 @@ impl Renderer {
             let dx = x1 - x0;
 
             if dx <= 0 {
-                panic!();
+                panic!(); // safeguard. this shouldnt happen
             }
 
             let char = if r1 < r0 {

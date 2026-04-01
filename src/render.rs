@@ -110,43 +110,75 @@ impl Renderer {
 
     fn draw_line(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
         let column_width = if self.config.compact { 1 } else { 4 };
-        let mut lines = vec![String::new(); self.config.height as usize];
+        let width = cur_values.len() * column_width;
+        let mut grid: Vec<Vec<char>> = vec![vec![' '; width]; self.config.height];
 
-        let mut y_values: Vec<usize> = Vec::new();
+        let mut y_values: Vec<i32> = Vec::new();
         for &v in cur_values {
             let height = (v / 100.0 * self.config.height.saturating_sub(1) as f32)
                 .round()
-                .clamp(0.0, (self.config.height.saturating_sub(1)) as f32 ) as usize;
+                .clamp(0.0, (self.config.height.saturating_sub(1)) as f32 ) as i32;
 
             y_values.push(height);
         }
 
-        for row in 0..self.config.height {
-            let row_height = self.config.height - 1 - row;
-
-            for (col, &y) in y_values.iter().enumerate() {
-                let is_a_point = y == row_height;
-
-                if self.config.compact {
-                    lines[row].push(
-                        if is_a_point {
-                            if self.config.ascii { '*' } else { '•' }
-                        } else { ' ' }
-                    );
-                } else {
-                    lines[row].push_str(
-                        if is_a_point {
-                            if self.config.ascii { "*  " } else { "•  " }
-                        } else { "   " }
-                    );
-                }
+        let convert_x = |i: usize| -> i32 {
+            if self.config.compact {
+                i as i32
+            } else {
+                (i * column_width + 1) as i32
             }
+        };
+
+        let insert = |grid: &mut [Vec<char>], x: i32, row: i32, char: char, ascii: bool, force: bool| {
+            if x < 0 || row < 0 {
+                return;
+            }
+            let (x, row) = (x as usize, row as usize);
+            if row >= grid.len() || x >= grid[0].len() {
+                return;
+            }
+
+            let cur = grid[row][x];
+            grid[row][x] = if !force { merge(cur, char, ascii) } else { char };
+        };
+
+        for i in 0..y_values.len().saturating_sub(1) {
+            let x0 = convert_x(i);
+            let x1 = convert_x(i+1);
+            let r0 = y_values[i];
+            let r1 = y_values[i+1];
+
+            let dx = x1 - x0;
+
+            if dx <= 0 {
+                panic!();
+            }
+
+            let char = if r1 < r0 {
+                if self.config.ascii { '/' } else { '╱' }
+            } else if r1 > r0 {
+                if self.config.ascii { '\\' } else { '╲' }
+            } else {
+                if self.config.ascii { '_' } else { '─' }
+            };
+
+            for step in 0..=dx {
+                let t = step as f32 / dx as f32;
+                let row = (r0 as f32 + (r1 - r0) as f32 * t).round() as i32;
+
+                insert(&mut grid, x0 + step, row, char, self.config.ascii, false);
+            }
+
+            let dot = if self.config.ascii { '*' } else { '•' };
+            insert(&mut grid, x0, r0, dot, self.config.ascii, true);
+
         }
 
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, line) in lines.into_iter().enumerate() {
+        for (e, row) in grid.into_iter().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,
@@ -155,9 +187,16 @@ impl Renderer {
                 }))?;
             }
             stdout.queue(cursor::MoveTo(0, e as u16))?;
+            let line: String = row.into_iter().collect();
             stdout.queue(style::Print(line))?;
         }
 
         Ok(())
     }
+}
+
+fn merge(existing: char, new: char, ascii: bool) -> char {
+    if existing == ' ' { return new; }
+    if existing == new { return existing; }
+    if ascii { '+' } else { '┼' }
 }

@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stdout = stdout();
     stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
-    let mut renderer = render::Renderer::new(render::RenderMode::Bars, render::RenderConfig {
+    let mut renderer = render::Renderer::new(render::RenderMode::Line, render::RenderConfig {
         height,
         ascii: args.ascii,
         compact: args.compact,

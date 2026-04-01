@@ -10,7 +10,6 @@ use std::io::{stdout, Write};
 use crossterm::{ExecutableCommand, terminal};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
-use symphonia::core::errors::Error;
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI

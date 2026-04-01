@@ -137,10 +137,9 @@ impl AudioState {
                 let packet = match format.next_packet() {
                     Ok(packet) => packet,
                     Err(Error::ResetRequired) => {
-                        unimplemented!();
+                        return Err(Error::ResetRequired);
                     }
-                    Err(Error::IoError(err))
-                    if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    Err(Error::IoError(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
                         return Ok(false);
                     }
                     Err(err) => {

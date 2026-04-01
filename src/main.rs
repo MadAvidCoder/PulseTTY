@@ -98,14 +98,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut fft_state = fft::FFTState::new(columns);
 
-   let mut audio_state = if let Some(path) = file {
+    let mut audio_state = if let Some(path) = file {
        audio::AudioState::from_file(path.to_string_lossy().as_ref())
-   } else if let Some(sel) = args.mic.as_deref() {
+    } else if let Some(sel) = args.mic.as_deref() {
        let sel = if sel.is_empty() { None } else { Some(sel) };
        audio::AudioState::from_microphone(sel)
-   } else {
+    } else {
        audio::AudioState::from_system(args.device.as_deref())
-   };
+    };
 
     let mut cur_values: Vec<f32> = vec![0f32; columns];
     let mut peaks: Vec<f32> = vec![0f32; columns];

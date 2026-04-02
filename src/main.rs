@@ -279,22 +279,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
         let terminal_width = terminal_width as usize;
 
-        let status = fit_width(format!(
-            " PulseTTY | mode: {:?} | src: {} | gain: {:.2} | {}ms ",
-            args.mode,
-            source_label,
-            gain,
-            frame_ms
-        ).as_str(), terminal_width);
+        let left_status = format!(" PulseTTY  [{source_label}]  mode: {:?}  gain: {gain:.2}  frame: {frame_ms}ms ", args.mode);
+        let right_status = format!(
+            " cols:{columns}  h:{height}  {}{}{} ",
+            if args.ascii { "ASCII " } else { "" },
+            if args.compact { "CMP " } else { "" },
+            if args.no_colour { "NOCOL " } else { "" },
+        );
+        let mut status_line = left_status;
+        if status_line.len() + right_status.len() <= terminal_width {
+            status_line.push_str(&" ".repeat(terminal_width - status_line.len() - right_status.len()));
+            status_line.push_str(&right_status);
+        }
+        status_line = fit_width(&status_line, terminal_width);
         let help = fit_width(" q/Esc quit | m mode | +/- gain | c colour | a ascii ", terminal_width);
 
         stdout.queue(cursor::MoveTo(0, 0))?;
         stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
-        stdout.queue(style::Print(format!("{status}")))?;
+        stdout.queue(style::SetAttribute(style::Attribute::Reverse))?;
+        stdout.queue(style::Print(format!("{status_line}")))?;
+        stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
 
         stdout.queue(cursor::MoveTo(0, terminal_height.saturating_sub(1)))?;
         stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+        stdout.queue(style::SetAttribute(style::Attribute::Dim))?;
         stdout.queue(style::Print(format!("{help}")))?;
+        stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
 
         renderer.draw(&mut stdout, &cur_values, &peaks)?;
 

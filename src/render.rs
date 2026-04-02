@@ -26,16 +26,18 @@ pub struct Renderer {
     mode: RenderMode,
     config: RenderConfig,
     history: VecDeque<Vec<f32>>,
+    lines: Vec<String>,
 }
 
 impl Renderer {
     pub fn new(mode: RenderMode, config: RenderConfig) -> Self {
         let q: VecDeque<Vec<f32>> = (0..config.spectrogram_columns).map(|_| vec![0.0; config.columns]).collect();
-
+        let h = config.height;
         Self {
             mode,
             config,
             history: q,
+            lines: vec![String::new(); h],
         }
     }
 
@@ -71,16 +73,30 @@ impl Renderer {
     pub fn resize(&mut self, new_height: usize, new_spec_col: usize) {
         self.config.height = new_height;
         self.config.spectrogram_columns = new_spec_col;
+        self.lines.resize_with(new_height, String::new);
+
+        while self.history.len() > new_spec_col {
+            self.history.pop_front();
+        }
+        while self.history.len() < new_spec_col {
+            self.history.push_back(vec![0.0; self.config.columns]);
+        }
     }
 
     fn draw_bars(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
-        let mut lines = vec![String::new(); self.config.height as usize];
+        let target_len = cur_values.len() * if self.config.compact { 1 } else { 4 };
 
+        for l in &mut self.lines {
+           l.clear();
+            if l.capacity() < target_len {
+                l.reserve(target_len - l.capacity());
+            }
+        }
         for i in 0..cur_values.len() {
             let height: u32 = (cur_values[i] / 100.0 * self.config.height as f32).round().clamp(0.0, self.config.height as f32) as u32;
             let peak_height: u32 = max((peaks[i] / 100.0 * self.config.height as f32).round().clamp(0.0, self.config.height as f32) as u32, height.saturating_add(1));
 
-            for (e, l) in lines.iter_mut().enumerate() {
+            for (e, l) in self.lines.iter_mut().enumerate() {
                 if self.config.height - e == peak_height as usize {
                     if self.config.compact {
                         if self.config.ascii {
@@ -123,7 +139,7 @@ impl Renderer {
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, line) in lines.into_iter().enumerate() {
+        for (e, line) in self.lines.iter_mut().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,
@@ -240,9 +256,11 @@ impl Renderer {
             .clamp(0.0, (self.config.height - 1) as f32) as usize;
         let peak_row = max(peak_row, level_rows+1);
 
-        let mut lines = vec![String::new(); self.config.height];
+        for l in &mut self.lines {
+            l.clear();
+        }
 
-        for (row, line) in lines.iter_mut().enumerate() {
+        for (row, line) in self.lines.iter_mut().enumerate() {
             let height = self.config.height - row;
 
             let filled = height <= level_rows;
@@ -274,7 +292,7 @@ impl Renderer {
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, line) in lines.into_iter().enumerate() {
+        for (e, line) in self.lines.into_iter().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,
@@ -290,10 +308,11 @@ impl Renderer {
     }
 
     fn draw_spectrogram(&mut self, stdout: &mut impl Write, cur_values: &[f32]) -> io::Result<()> {
-        if self.history.len() == self.config.spectrogram_columns {
-            self.history.pop_front();
-        }
-        let mut newest = vec![0.0f32; self.config.columns];
+        let mut newest = if self.history.len() == self.config.spectrogram_columns {
+            self.history.pop_front().unwrap()
+        } else {
+            vec![0.0f32; self.config.columns]
+        };
         for i in 0..self.config.columns {
             newest[i] = cur_values.get(i).copied().unwrap_or(0.0).clamp(0.0, 100.0);
         }

@@ -142,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut eof = false;
     let mut eof_drain: usize = 1800usize / frame_ms as usize;
+    let eof_drain_total = eof_drain;
 
     loop {
         match audio_state.next_sample() {
@@ -153,7 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if eof {
-            eof_drain -= 1;
+            eof_drain = eof_drain.saturating_sub(1);
         }
         if eof_drain == 0 {
             break;
@@ -212,9 +213,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             target_values = fft_state.transform(chunk, audio_state.sample_rate);
         }
 
+        let fade = if eof {
+            (eof_drain as f32 / eof_drain_total as f32).clamp(0.0, 1.0).powi(2)
+        } else {
+            1.0
+        };
+
         for v in &mut target_values {
             if eof {
-                *v = (*v * gain * (eof_drain as f32 / 50f32)).clamp(0.0, 100.0);
+                *v = (*v * gain * fade).clamp(0.0, 100.0);
             } else {
                 *v = (*v * gain).clamp(0.0, 100.0);
             }

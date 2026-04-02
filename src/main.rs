@@ -7,8 +7,7 @@ use std::cmp::max;
 use std::thread;
 use std::time::Duration;
 use std::io::{stdout, Write};
-use crossterm::{cursor, execute, style, terminal};
-use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::{cursor, execute, style, terminal::{self, EnterAlternateScreen, LeaveAlternateScreen}, event::{self, Event, KeyCode, KeyModifiers}};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
 
@@ -270,6 +269,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         renderer.draw(&mut stdout, &cur_values, &peaks)?;
 
         stdout.flush()?;
+
+        while event::poll(Duration::from_millis(0))? {
+            if let Event::Key(k) = event::read()? {
+                if k.code == KeyCode::Char('q') || k.code == KeyCode::Esc {
+                    return Ok(());
+                }
+
+                if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
+                    return Ok(());
+                }
+            }
+        }
 
         thread::sleep(Duration::from_millis(frame_ms));
     }

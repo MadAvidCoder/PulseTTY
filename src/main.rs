@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let file = args.file;
     let frame_ms = args.frame_ms;
-    let gain = args.gain;
+    let mut gain = args.gain;
 
     let mut mode = args.mode;
     let mut no_colour = args.no_colour;
@@ -333,6 +333,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         stdout.queue(terminal::Clear(terminal::ClearType::All))?;
                     },
                     KeyCode::Char('a') => ascii = renderer.toggle_ascii(),
+                    KeyCode::Char('+') | KeyCode::Char('=') => gain = (gain * 1.1).clamp(0.05, 20.0),
+                    KeyCode::Char('-') | KeyCode::Char('_') => gain = (gain * (1.0 / 1.1)).clamp(0.05, 20.0),
+                    KeyCode::Char('0') => gain = 1.0,
                     _ => {},
                 }
             }

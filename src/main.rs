@@ -109,11 +109,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if let Some(c) = args.columns && c < 2 {
-        return Err("--columns must be at least 2".into());
+    if let Some(c) = args.columns {
+        if c < 2 {
+            return Err("--columns must be at least 2".into());
+        }
     }
-    if let Some(h) = args.height && h < 2 {
-        return Err("--height must be at least 2".into());
+    if let Some(h) = args.height {
+        if h < 2 {
+            return Err("--height must be at least 2".into());
+        }
     }
     if args.frame_ms == 0 {
         return Err("--frame-ms cannot be 0".into());

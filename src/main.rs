@@ -10,7 +10,7 @@ use std::io::{stdout, Write};
 use crossterm::{cursor, execute, style, terminal::{self, EnterAlternateScreen, LeaveAlternateScreen}, event::{self, Event, KeyCode, KeyModifiers}, QueueableCommand};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
-use helpers::truncate;
+use helpers::{fit_width, get_filename};
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
@@ -162,18 +162,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut fft_state = fft::FFTState::new(columns);
-    let source_label: &str;
+    let mut source_label: String;
 
     let mut audio_state = if let Some(path) = file {
-        source_label = "file";
-       audio::AudioState::from_file(path.to_string_lossy().as_ref())
+        source_label = "FILE ".to_string();
+        source_label.push_str(get_filename(&path, 28).as_str());
+        audio::AudioState::from_file(path.to_string_lossy().as_ref())
     } else if let Some(sel) = args.mic.as_deref() {
-        source_label = "mic";
-       let sel = if sel.is_empty() { None } else { Some(sel) };
-       audio::AudioState::from_microphone(sel)
+        let sel = if sel.is_empty() { None } else { Some(sel) };
+        source_label = "MIC ".to_string();
+        source_label.push_str(if let Some(s) = sel { s } else { "default" });
+        audio::AudioState::from_microphone(sel)
     } else {
-        source_label = "system";
-       audio::AudioState::from_system(args.device.as_deref())
+        source_label = "SYS ".to_string();
+        source_label.push_str(if let Some(s) = &args.device { s } else { "default" });
+        audio::AudioState::from_system(args.device.as_deref())
     };
 
     let mut cur_values: Vec<f32> = vec![0f32; columns];
@@ -276,14 +279,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
         let terminal_width = terminal_width as usize;
 
-        let status = truncate(format!(
+        let status = fit_width(format!(
             " PulseTTY | mode: {:?} | src: {} | gain: {:.2} | {}ms ",
             args.mode,
             source_label,
             gain,
             frame_ms
-        ), terminal_width);
-        let help = truncate(" q/Esc quit | m mode | +/- gain | c colour | a ascii ".to_string(), terminal_width);
+        ).as_str(), terminal_width);
+        let help = fit_width(" q/Esc quit | m mode | +/- gain | c colour | a ascii ", terminal_width);
 
         stdout.queue(cursor::MoveTo(0, 0))?;
         stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;

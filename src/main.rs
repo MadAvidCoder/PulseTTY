@@ -7,13 +7,44 @@ use std::cmp::max;
 use std::thread;
 use std::time::Duration;
 use std::io::{stdout, Write};
-use crossterm::{ExecutableCommand, terminal};
+use crossterm::{cursor, execute, style, terminal};
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
 const HOP_SIZE: usize = FFT_SIZE / 2;
+
+struct TerminalGuard;
+
+impl TerminalGuard {
+    fn new() -> std::io::Result<Self> {
+        terminal::enable_raw_mode()?;
+
+        let mut stdout = stdout();
+        execute!(stdout, EnterAlternateScreen, terminal::Clear(terminal::ClearType::All), cursor::MoveTo(0,0), cursor::Hide)?;
+        stdout.flush()?;
+
+        Ok(Self)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        terminal::disable_raw_mode().ok();
+
+        let mut stdout = stdout();
+        execute!(
+            stdout,
+            style::ResetColor,
+            style::SetAttribute(style::Attribute::Reset),
+            cursor::Show,
+            LeaveAlternateScreen
+        ).ok();
+        stdout.flush().ok();
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -113,8 +144,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cell_width: u16 = if args.compact { 1 } else { 2 };
     let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
 
+    let _guard = TerminalGuard::new()?;
+
     let mut stdout = stdout();
-    stdout.execute(terminal::Clear(terminal::ClearType::All))?;
 
     let mut renderer = render::Renderer::new(args.mode, render::RenderConfig {
         height,

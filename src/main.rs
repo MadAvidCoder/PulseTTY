@@ -131,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let terminal_width = terminal_width as usize;
     let terminal_height = terminal_height as usize;
 
-    let height = args.height.unwrap_or_else(|| max(terminal_height.saturating_sub(2), 2));
+    let mut height = args.height.unwrap_or_else(|| max(terminal_height.saturating_sub(2), 2));
     let columns = args.columns.unwrap_or_else(|| {
         match args.mode {
             render::RenderMode::Spectrogram => (height*2).clamp(16, 128),
@@ -283,6 +283,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
         let terminal_width = terminal_width as usize;
+
+        if args.height == None {
+            height = max(terminal_height.saturating_sub(2), 2) as usize;
+        }
+        let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
+        renderer.resize(height, spectrogram_columns);
 
         let left_status = format!(" PulseTTY  [{source_label}]  mode: {mode:?}  gain: {gain:.2}  frame: {frame_ms}ms ");
         let right_status = format!(

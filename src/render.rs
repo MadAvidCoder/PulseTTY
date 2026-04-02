@@ -42,8 +42,8 @@ impl Renderer {
     pub fn draw(&mut self, stdout: &mut impl Write,  cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
         match self.mode {
             RenderMode::Bars => self.draw_bars(stdout, cur_values, peaks),
-            RenderMode::Line => self.draw_line(stdout, cur_values, peaks),
-            RenderMode::Spectrogram => self.draw_spectrogram(stdout, cur_values, peaks),
+            RenderMode::Line => self.draw_line(stdout, cur_values),
+            RenderMode::Spectrogram => self.draw_spectrogram(stdout, cur_values),
             RenderMode::Vu => self.draw_vu(stdout, cur_values, peaks),
         }
     }
@@ -66,6 +66,11 @@ impl Renderer {
     pub fn toggle_ascii(&mut self) -> bool {
         self.config.ascii = !self.config.ascii;
         self.config.ascii
+    }
+
+    pub fn resize(&mut self, new_height: usize, new_spec_col: usize) {
+        self.config.height = new_height;
+        self.config.spectrogram_columns = new_spec_col;
     }
 
     fn draw_bars(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
@@ -133,7 +138,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn draw_line(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
+    fn draw_line(&mut self, stdout: &mut impl Write, cur_values: &[f32]) -> io::Result<()> {
         let column_width = if self.config.compact { 1 } else { 4 };
         let width = cur_values.len() * column_width;
         let mut grid: Vec<Vec<char>> = vec![vec![' '; width]; self.config.height];
@@ -284,7 +289,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn draw_spectrogram(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
+    fn draw_spectrogram(&mut self, stdout: &mut impl Write, cur_values: &[f32]) -> io::Result<()> {
         if self.history.len() == self.config.spectrogram_columns {
             self.history.pop_front();
         }

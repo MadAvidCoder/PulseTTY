@@ -286,7 +286,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let left_status = format!(" PulseTTY  [{source_label}]  mode: {mode:?}  gain: {gain:.2}  frame: {frame_ms}ms ");
         let right_status = format!(
-            " cols:{columns}  h:{height}  {}{}{} ",
+            " cols: {columns}  h: {height}  {}{}{} ",
             if ascii { "ASCII " } else { "" },
             if args.compact { "CMP " } else { "" },
             if no_colour { "NOCOL " } else { "" },
@@ -328,7 +328,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             no_colour = renderer.toggle_colour();
                         }
                     },
-                    KeyCode::Char('m') => mode = renderer.next_mode(),
+                    KeyCode::Char('m') => {
+                        mode = renderer.next_mode();
+                        stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+                    },
                     KeyCode::Char('a') => ascii = renderer.toggle_ascii(),
                     _ => {},
                 }

@@ -193,6 +193,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut eof_drain: usize = 0;
     let mut eof_drain_total: usize = 1;
 
+    let (mut terminal_width, mut terminal_height) = terminal::size().unwrap_or((80, 24));
+
     loop {
         match audio_state.next_sample() {
             Ok(true) => {},
@@ -288,29 +290,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fft_state.smooth(&target_values[..], &mut cur_values[..], &mut peaks[..]);
 
-        let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
-        let terminal_width = terminal_width as usize;
-
-        if args.height == None {
-            height = max(terminal_height.saturating_sub(2), 2) as usize;
-        }
-        let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
-        renderer.resize(height, spectrogram_columns);
-
         let left_status = format!(" PulseTTY  [{source_label}]  mode: {mode:?}  gain: {gain:.2}  frame: {frame_ms}ms ");
         let right_status = format!(
-            " cols: {columns}  h: {height}  {}{}{} ",
+            " cols: {columns}  height: {height}  {}{}{} ",
             if ascii { "ASCII " } else { "" },
             if args.compact { "CMP " } else { "" },
             if no_colour { "NOCOL " } else { "" },
         );
         let mut status_line = left_status;
-        if status_line.len() + right_status.len() <= terminal_width {
-            status_line.push_str(&" ".repeat(terminal_width - status_line.len() - right_status.len()));
+        if status_line.len() + right_status.len() <= terminal_width as usize{
+            status_line.push_str(&" ".repeat(terminal_width as usize - status_line.len() - right_status.len()));
             status_line.push_str(&right_status);
         }
-        status_line = fit_width(&status_line, terminal_width);
-        let help = fit_width(" q/Esc quit | m mode | +/- gain | c colour | a ascii ", terminal_width);
+        status_line = fit_width(&status_line, terminal_width as usize);
+        let help = fit_width(" q/Esc quit | m mode | +/- gain | c colour | a ascii ", terminal_width as usize);
 
         stdout.queue(cursor::MoveTo(0, 0))?;
         stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
@@ -329,28 +322,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout.flush()?;
 
         while event::poll(Duration::from_millis(0))? {
-            if let Event::Key(k) = event::read()? {
-                if k.kind != KeyEventKind::Press { continue; }
+            match event::read()? {
+                Event::Key(k) => {
+                    if k.kind != KeyEventKind::Press { continue; }
 
-                match k.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Char('c') => {
-                        if k.modifiers.contains(KeyModifiers::CONTROL) {
-                            return Ok(());
-                        } else {
-                            no_colour = renderer.toggle_colour();
-                        }
-                    },
-                    KeyCode::Char('m') => {
-                        mode = renderer.next_mode();
-                        stdout.queue(terminal::Clear(terminal::ClearType::All))?;
-                    },
-                    KeyCode::Char('a') => ascii = renderer.toggle_ascii(),
-                    KeyCode::Char('+') | KeyCode::Char('=') => gain = (gain * 1.1).clamp(0.05, 20.0),
-                    KeyCode::Char('-') | KeyCode::Char('_') => gain = (gain * (1.0 / 1.1)).clamp(0.05, 20.0),
-                    KeyCode::Char('0') => gain = 1.0,
-                    _ => {},
-                }
+                    match k.code {
+                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                        KeyCode::Char('c') => {
+                            if k.modifiers.contains(KeyModifiers::CONTROL) {
+                                return Ok(());
+                            } else {
+                                no_colour = renderer.toggle_colour();
+                            }
+                        },
+                        KeyCode::Char('m') => {
+                            mode = renderer.next_mode();
+                            stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+                        },
+                        KeyCode::Char('a') => ascii = renderer.toggle_ascii(),
+                        KeyCode::Char('+') | KeyCode::Char('=') => gain = (gain * 1.1).clamp(0.05, 20.0),
+                        KeyCode::Char('-') | KeyCode::Char('_') => gain = (gain * (1.0 / 1.1)).clamp(0.05, 20.0),
+                        KeyCode::Char('0') => gain = 1.0,
+                        _ => {},
+                    }
+                },
+                Event::Resize(w, h) => {
+                    terminal_width = w;
+                    terminal_height = h;
+
+                    if args.height == None {
+                        height = max(terminal_height.saturating_sub(2), 2) as usize;
+                    }
+                    let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
+                    renderer.resize(height, spectrogram_columns);
+                },
+                _ => {},
             }
         }
 

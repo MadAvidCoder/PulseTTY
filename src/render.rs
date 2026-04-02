@@ -106,7 +106,7 @@ impl Renderer {
                     _ => Color::Green,
                 }))?;
             }
-            stdout.queue(cursor::MoveTo(0, e as u16))?;
+            stdout.queue(cursor::MoveTo(0, e as u16 + 1))?;
             stdout.queue(style::Print(line))?;
         }
 
@@ -191,7 +191,7 @@ impl Renderer {
                     _ => Color::Green,
                 }))?;
             }
-            stdout.queue(cursor::MoveTo(0, e as u16))?;
+            stdout.queue(cursor::MoveTo(0, e as u16 + 1))?;
             let line: String = row.into_iter().collect();
             stdout.queue(style::Print(line))?;
         }
@@ -257,7 +257,7 @@ impl Renderer {
                     _ => Color::Green,
                 }))?;
             }
-            stdout.queue(cursor::MoveTo(0, e as u16))?;
+            stdout.queue(cursor::MoveTo(0, e as u16 + 1))?;
             stdout.queue(style::Print(line))?;
         }
 
@@ -305,7 +305,7 @@ impl Renderer {
         };
 
         for row in 0..self.config.height {
-            stdout.queue(cursor::MoveTo(0, row as u16))?;
+            stdout.queue(cursor::MoveTo(0, row as u16 + 1))?;
 
             let t0 = row as f32 / self.config.height as f32;
             let t1 = (row as f32 + 1.0) / self.config.height as f32;

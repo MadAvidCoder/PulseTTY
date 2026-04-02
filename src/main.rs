@@ -7,9 +7,10 @@ use std::cmp::max;
 use std::thread;
 use std::time::Duration;
 use std::io::{stdout, Write};
-use crossterm::{cursor, execute, style, terminal::{self, EnterAlternateScreen, LeaveAlternateScreen}, event::{self, Event, KeyCode, KeyModifiers}};
+use crossterm::{cursor, execute, style, terminal::{self, EnterAlternateScreen, LeaveAlternateScreen}, event::{self, Event, KeyCode, KeyModifiers}, QueueableCommand};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
+use helpers::truncate;
 
 // const FFT_SIZE: usize = 4096;
 const FFT_SIZE: usize = 2048; //works better for lower sample rate wasAPI
@@ -129,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let terminal_width = terminal_width as usize;
     let terminal_height = terminal_height as usize;
 
-    let height = args.height.unwrap_or_else(|| max(terminal_height.saturating_sub(1), 2));
+    let height = args.height.unwrap_or_else(|| max(terminal_height.saturating_sub(2), 2));
     let columns = args.columns.unwrap_or_else(|| {
         match args.mode {
             render::RenderMode::Spectrogram => (height*2).clamp(16, 128),
@@ -161,13 +162,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let mut fft_state = fft::FFTState::new(columns);
+    let source_label: &str;
 
     let mut audio_state = if let Some(path) = file {
+        source_label = "file";
        audio::AudioState::from_file(path.to_string_lossy().as_ref())
     } else if let Some(sel) = args.mic.as_deref() {
+        source_label = "mic";
        let sel = if sel.is_empty() { None } else { Some(sel) };
        audio::AudioState::from_microphone(sel)
     } else {
+        source_label = "system";
        audio::AudioState::from_system(args.device.as_deref())
     };
 
@@ -267,6 +272,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         fft_state.smooth(&target_values, &mut cur_values, &mut peaks);
+
+        let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
+        let terminal_width = terminal_width as usize;
+
+        let status = truncate(format!(
+            " PulseTTY | mode: {:?} | src: {} | gain: {:.2} | {}ms ",
+            args.mode,
+            source_label,
+            gain,
+            frame_ms
+        ), terminal_width);
+        let help = truncate(" q/Esc quit | m mode | +/- gain | c colour | a ascii ".to_string(), terminal_width);
+
+        stdout.queue(cursor::MoveTo(0, 0))?;
+        stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+        stdout.queue(style::Print(format!("{status}")))?;
+
+        stdout.queue(cursor::MoveTo(0, terminal_height.saturating_sub(1)))?;
+        stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+        stdout.queue(style::Print(format!("{help}")))?;
 
         renderer.draw(&mut stdout, &cur_values, &peaks)?;
 

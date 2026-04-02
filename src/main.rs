@@ -177,14 +177,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut target_values: Vec<f32> = vec![0f32; columns];
 
     let mut eof = false;
-    let mut eof_drain: usize = 1800usize / frame_ms as usize;
-    let eof_drain_total = eof_drain;
+    let mut eof_drain: usize = 0;
+    let mut eof_drain_total: usize = 1;
 
     loop {
         match audio_state.next_sample() {
             Ok(true) => {},
             Ok(false) => {
                 eof = true;
+                eof_drain = (1800usize / frame_ms.max(1) as usize).max(1);
+                eof_drain_total = eof_drain;
             }
             Err(e) => return Err(e.into()),
         }

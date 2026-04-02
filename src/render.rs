@@ -292,7 +292,7 @@ impl Renderer {
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, line) in self.lines.into_iter().enumerate() {
+        for (e, line) in self.lines.iter_mut().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,

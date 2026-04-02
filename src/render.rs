@@ -48,6 +48,26 @@ impl Renderer {
         }
     }
 
+    pub fn next_mode(&mut self) -> RenderMode {
+        self.mode = match self.mode {
+            RenderMode::Vu => RenderMode::Bars,
+            RenderMode::Bars => RenderMode::Line,
+            RenderMode::Line => RenderMode::Spectrogram,
+            RenderMode::Spectrogram => RenderMode::Vu,
+        };
+        self.mode
+    }
+
+    pub fn toggle_colour(&mut self) -> bool {
+        self.config.no_colour = !self.config.no_colour;
+        self.config.no_colour
+    }
+
+    pub fn toggle_ascii(&mut self) -> bool {
+        self.config.ascii = !self.config.ascii;
+        self.config.ascii
+    }
+
     fn draw_bars(&mut self, stdout: &mut impl Write, cur_values: &[f32], peaks: &[f32]) -> io::Result<()> {
         let mut lines = vec![String::new(); self.config.height as usize];
 

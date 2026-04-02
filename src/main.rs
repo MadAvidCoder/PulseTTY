@@ -145,6 +145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let frame_ms = args.frame_ms;
     let gain = args.gain;
 
+    let mut mode = args.mode;
+    let mut no_colour = args.no_colour;
+    let mut ascii = args.ascii;
+
     let cell_width: u16 = if args.compact { 1 } else { 2 };
     let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
 
@@ -279,12 +283,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
         let terminal_width = terminal_width as usize;
 
-        let left_status = format!(" PulseTTY  [{source_label}]  mode: {:?}  gain: {gain:.2}  frame: {frame_ms}ms ", args.mode);
+        let left_status = format!(" PulseTTY  [{source_label}]  mode: {mode:?}  gain: {gain:.2}  frame: {frame_ms}ms ");
         let right_status = format!(
             " cols:{columns}  h:{height}  {}{}{} ",
-            if args.ascii { "ASCII " } else { "" },
+            if ascii { "ASCII " } else { "" },
             if args.compact { "CMP " } else { "" },
-            if args.no_colour { "NOCOL " } else { "" },
+            if no_colour { "NOCOL " } else { "" },
         );
         let mut status_line = left_status;
         if status_line.len() + right_status.len() <= terminal_width {
@@ -312,12 +316,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         while event::poll(Duration::from_millis(0))? {
             if let Event::Key(k) = event::read()? {
-                if k.code == KeyCode::Char('q') || k.code == KeyCode::Esc {
-                    return Ok(());
-                }
-
-                if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
-                    return Ok(());
+                match k.code {
+                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                    KeyCode::Char('c') => if k.modifiers.contains(KeyModifiers::CONTROL) {
+                        return Ok(());
+                    } else {
+                        no_colour = renderer.toggle_colour();
+                    },
+                    KeyCode::Char('m') => mode = renderer.next_mode(),
+                    KeyCode::Char('a') => ascii = renderer.toggle_ascii(),
+                    _ => {},
                 }
             }
         }

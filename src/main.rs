@@ -183,18 +183,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match audio_state.next_sample() {
             Ok(true) => {},
             Ok(false) => {
-                eof = true;
-                eof_drain = (1800usize / frame_ms.max(1) as usize).max(1);
-                eof_drain_total = eof_drain;
+                if !eof {
+                    eof = true;
+                    eof_drain = (1800usize / frame_ms.max(1) as usize).max(1);
+                    eof_drain_total = eof_drain;
+                }
             }
             Err(e) => return Err(e.into()),
         }
 
         if eof {
             eof_drain = eof_drain.saturating_sub(1);
-        }
-        if eof_drain == 0 {
-            break;
+            if eof_drain == 0 {
+                break;
+            }
         }
 
         if !eof {

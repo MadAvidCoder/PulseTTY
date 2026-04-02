@@ -187,6 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut cur_values: Vec<f32> = vec![0f32; columns];
     let mut peaks: Vec<f32> = vec![0f32; columns];
     let mut target_values: Vec<f32> = vec![0f32; columns];
+    let mut fft_input: Vec<Complex<f32>> = vec![Complex::new(0.0, 0.0); FFT_SIZE];
 
     let mut eof = false;
     let mut eof_drain: usize = 0;
@@ -216,11 +217,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match &mut audio_state.source {
                 audio::AudioSource::File { format: _, sample_buf: _, decoder: _, track_id: _ } => {
                     if audio_state.buffer.len() >= FFT_SIZE {
-                        let chunk: Vec<Complex<f32>> = audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..]
-                            .iter()
-                            .map(|&f| Complex::new(f, 0f32))
-                            .collect();
-                        target_values = fft_state.transform(chunk, audio_state.sample_rate);
+                        let chunk = &audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..];
+                        for (space, &v) in fft_input.iter_mut().zip(chunk.iter()) {
+                            *space = Complex::new(v, 0f32);
+                        }
+
+                        fft_state.transform(&mut fft_input[..], audio_state.sample_rate, &mut target_values[..]);
                     }
                 },
 
@@ -233,8 +235,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let chunk = &audio_state.buffer[*readpos..*readpos + FFT_SIZE];
                         let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
-                        let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
-                        target_values = fft_state.transform(scaled, audio_state.sample_rate);
+                        for (space, &v) in fft_input.iter_mut().zip(chunk.iter()) {
+                            *space = Complex::new(v - mean, 0.0)
+                        }
+                        fft_state.transform(&mut fft_input[..], audio_state.sample_rate, &mut target_values[..]);
 
                         *readpos += HOP_SIZE;
                     }
@@ -249,8 +253,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let chunk = &audio_state.buffer[*readpos..*readpos + FFT_SIZE];
                         let mean: f32 = chunk.iter().sum::<f32>() / chunk.len() as f32;
-                        let scaled: Vec<Complex<f32>> = chunk.iter().map(|&v| Complex::new(v - mean, 0.0)).collect();
-                        target_values = fft_state.transform(scaled, audio_state.sample_rate);
+                        for (space, &v) in fft_input.iter_mut().zip(chunk.iter()) {
+                            *space = Complex::new(v - mean, 0.0)
+                        }
+                        fft_state.transform(&mut fft_input[..], audio_state.sample_rate, &mut target_values[..]);
 
                         *readpos += HOP_SIZE;
                     }
@@ -258,11 +264,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else {
             audio_state.buffer.extend(std::iter::repeat(0f32).take(FFT_SIZE/16));
-            let chunk: Vec<Complex<f32>> = audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..]
-                .iter()
-                .map(|&f| Complex::new(f, 0f32))
-                .collect();
-            target_values = fft_state.transform(chunk, audio_state.sample_rate);
+            let chunk = &audio_state.buffer[audio_state.buffer.len() - FFT_SIZE..];
+            for (space, &v) in fft_input.iter_mut().zip(chunk.iter()) {
+                *space = Complex::new(v, 0f32);
+            }
+
+            fft_state.transform(&mut fft_input[..], audio_state.sample_rate, &mut target_values[..]);
         }
 
         let fade = if eof {
@@ -279,7 +286,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        fft_state.smooth(&target_values, &mut cur_values, &mut peaks);
+        fft_state.smooth(&target_values[..], &mut cur_values[..], &mut peaks[..]);
 
         let (terminal_width, terminal_height) = terminal::size().unwrap_or((80, 24));
         let terminal_width = terminal_width as usize;

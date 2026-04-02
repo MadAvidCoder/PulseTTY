@@ -9,7 +9,10 @@ static WINDOW: OnceLock<Vec<f32>> = OnceLock::new();
 pub struct FFTState {
     prev: Vec<f32>,
     columns: usize,
-    fft: Arc<dyn Fft<f32>>
+    fft: Arc<dyn Fft<f32>>,
+    magnitudes: Vec<f32>,
+    smoothed_magnitudes: Vec<f32>,
+    smooth_buffer: Vec<f32>,
 }
 
 impl FFTState {
@@ -17,12 +20,18 @@ impl FFTState {
         FFTState {
             columns,
             fft: FftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE),
-            prev: vec![0f32; columns]
+            prev: vec![0f32; columns],
+            magnitudes: vec![0f32; FFT_SIZE/2],
+            smoothed_magnitudes: vec![0f32; FFT_SIZE/2],
+            smooth_buffer: vec![0f32; columns],
         }
     }
 
-    pub fn transform(&mut self, mut chunk: Vec<Complex<f32>>, sample_rate: f32) -> Vec<f32> {
-        let mut target_values: Vec<f32> = vec![0f32; self.columns];
+    pub fn transform(&mut self, chunk: &mut [Complex<f32>], sample_rate: f32, out: &mut [f32]) {
+        if out.len() != self.columns {
+            panic!();
+        }
+
         for (sample, w) in chunk.iter_mut()
             .zip(
                 WINDOW.get_or_init(|| {
@@ -43,29 +52,29 @@ impl FFTState {
                         })
                         .collect::<Vec<f32>>()
                 })
-                    .iter()
+                .iter()
             )
         {
             sample.re *= w;
         }
 
-        self.fft.process(&mut chunk);
+        self.fft.process(chunk);
 
-        let magnitudes: Vec<f32> = chunk.iter()
-            .take(FFT_SIZE / 2)
-            .map(|c| c.re * c.re + c.im * c.im)
-            .collect();
-
-        let mut smoothed_magnitudes = magnitudes.clone();
-
-        for i in 1..(magnitudes.len() - 1) {
-            smoothed_magnitudes[i] =
-                magnitudes[i] * 0.6 +
-                    magnitudes[i - 1] * 0.2 +
-                    magnitudes[i + 1] * 0.2;
+        for (i, c) in chunk.iter().take(FFT_SIZE / 2).enumerate() {
+            self.magnitudes[i] = c.re * c.re + c.im * c.im;
         }
 
-        let magnitudes = smoothed_magnitudes;
+        self.smoothed_magnitudes[0] = self.magnitudes[0];
+        self.smoothed_magnitudes[FFT_SIZE / 2 - 1] = self.magnitudes[FFT_SIZE / 2 - 1];
+
+        for i in 1..(FFT_SIZE / 2 - 1) {
+            self.smoothed_magnitudes[i] =
+                self.magnitudes[i] * 0.6 +
+                    self.magnitudes[i - 1] * 0.2 +
+                    self.magnitudes[i + 1] * 0.2;
+        }
+
+        let magnitudes = &self.smoothed_magnitudes;
 
         let fft_bins = FFT_SIZE / 2;
         let mel_min = hz_to_mel(20.0);
@@ -100,7 +109,7 @@ impl FFTState {
             let mut weight_sum = 0.0;
 
             if slice.len() <= 1 {
-                target_values[i] = slice.get(0).copied().unwrap_or(0.0);
+                out[i] = slice.get(0).copied().unwrap_or(0.0);
                 continue;
             }
 
@@ -149,13 +158,14 @@ impl FFTState {
             let value = value * 0.7 + delta * 0.8;
             self.prev[i] = value;
 
-            target_values[i] = value * 100.0;
+            out[i] = value * 100.0;
         }
-        target_values
     }
 
-    pub fn smooth(&mut self, target_values: &Vec<f32>, cur_values: &mut Vec<f32>, peaks: &mut Vec<f32>) {
-        let mut smoothed_targets = target_values.clone();
+    pub fn smooth(&mut self, target_values: &[f32], cur_values: &mut [f32], peaks: &mut [f32]) {
+        if self.smooth_buffer.len() != self.columns {
+            self.smooth_buffer.resize(self.columns, 0.0);
+        }
 
         for i in 0..self.columns {
             let mut sum = target_values[i];
@@ -170,14 +180,14 @@ impl FFTState {
                 count += 0.5;
             }
 
-            smoothed_targets[i] = sum / count;
+            self.smooth_buffer[i] = sum / count;
         }
 
-        let avg_energy: f32 = smoothed_targets.iter().sum::<f32>() / self.columns as f32;
+        let avg_energy: f32 = self.smooth_buffer.iter().sum::<f32>() / self.columns as f32;
 
-        for i in 0..self.columns {
-            smoothed_targets[i] *= 0.9;
-            smoothed_targets[i] += avg_energy * 0.15;
+        for v in &mut self.smooth_buffer {
+            *v *= 0.9;
+            *v += avg_energy * 0.15;
         }
 
         for i in 0..self.columns {
@@ -185,14 +195,14 @@ impl FFTState {
             let attack = if i < 5 { 0.6 } else { 0.3 };
             let release = 0.03;
 
-            let coeff = if smoothed_targets[i] > cur_values[i] {
+            let coeff = if self.smooth_buffer[i] > cur_values[i] {
                 attack
             } else {
                 release
             };
-            cur_values[i] += (smoothed_targets[i] - cur_values[i]) * coeff;
+            cur_values[i] += (self.smooth_buffer[i] - cur_values[i]) * coeff;
 
-            let delta = (smoothed_targets[i] - cur_values[i]).max(0.0);
+            let delta = (self.smooth_buffer[i] - cur_values[i]).max(0.0);
             cur_values[i] += delta * 0.33;
 
             if cur_values[i] > peaks[i] {

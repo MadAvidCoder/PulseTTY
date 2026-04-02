@@ -10,6 +10,7 @@ use std::io::{stdout, Write};
 use crossterm::{cursor, execute, style, terminal::{self, EnterAlternateScreen, LeaveAlternateScreen}, event::{self, Event, KeyCode, KeyModifiers}, QueueableCommand};
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
+use crossterm::event::KeyEventKind;
 use helpers::{fit_width, get_filename};
 
 // const FFT_SIZE: usize = 4096;
@@ -316,12 +317,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         while event::poll(Duration::from_millis(0))? {
             if let Event::Key(k) = event::read()? {
+                if k.kind != KeyEventKind::Press { continue; }
+
                 match k.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Char('c') => if k.modifiers.contains(KeyModifiers::CONTROL) {
-                        return Ok(());
-                    } else {
-                        no_colour = renderer.toggle_colour();
+                    KeyCode::Char('c') => {
+                        if k.modifiers.contains(KeyModifiers::CONTROL) {
+                            return Ok(());
+                        } else {
+                            no_colour = renderer.toggle_colour();
+                        }
                     },
                     KeyCode::Char('m') => mode = renderer.next_mode(),
                     KeyCode::Char('a') => ascii = renderer.toggle_ascii(),

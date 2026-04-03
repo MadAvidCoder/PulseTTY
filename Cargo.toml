@@ -1,13 +1,13 @@
 [package]
-name = "PulseTTY"
-version = "1.1.0"
+name = "pulsetty"
+version = "1.1.2"
 authors = ["MadAvidCoder"]
 license = "MIT"
 description = "A terminal-based music visualiser (system audio, microphone, or file), featuring multiple render modes."
 readme = "README.md"
 homepage = "https://github.com/MadAvidCoder/PulseTTY"
 repository = "https://github.com/MadAvidCoder/PulseTTY"
-keywords = ["cli", "music", "visualizer", "wasapi"]
+keywords = ["cli","audio", "music", "visualizer", "wasapi"]
 categories = ["command-line-utilities", "multimedia::audio", "visualization", "os::windows-apis"]
 edition = "2024"
 

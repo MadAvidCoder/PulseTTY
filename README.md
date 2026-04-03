@@ -26,9 +26,9 @@ Currently, PulseTTY only supports Windows environments, due to underlying audio 
 ### Via Cargo (recommended)
 You must first have Rust and Cargo installed. You can find their installation instructions [here](https://rust-lang.org/tools/install/).
 
-Now run:
+Now run: *(case-sensitive)*
 ```bash
-cargo install pulsetty
+cargo install PulseTTY
 ```
 This will globally install PulseTTY as a binary, allowing you to run it from any directory with `pulsetty`.
 

@@ -1,5 +1,5 @@
 [package]
-name = "pulsetty"
+name = "PulseTTY"
 version = "1.1.2"
 authors = ["MadAvidCoder"]
 license = "MIT"

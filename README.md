@@ -6,7 +6,9 @@ A **terminal-based music visualiser** that reacts to audio input (MP3, Mic or Sy
 
 https://github.com/user-attachments/assets/aa3cc2b5-8ee6-43da-a3c1-d243f209e7d4
 
-
+| ![bars](https://github.com/user-attachments/assets/bbff94a8-aa56-4837-bd91-c43bac7ca7b0) | ![line](https://github.com/user-attachments/assets/951fd9ef-726c-42b3-b0cb-6be3bbff3650) | ![spectrum](https://github.com/user-attachments/assets/1dde9a92-ed8b-4404-a109-16bdf3541ddd) |
+|:----------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------:|
+| Bars Mode                                                                                | Lines Mode                                                                               | Spectrum Analyser                                                                            |
 ## Features
 - Runs as a CLI in the terminal
 - Real-time audio visualisation, driven by audio input
@@ -58,7 +60,7 @@ To preset a render mode, supply the `--mode <MODE>` option, with `bars`, `line`,
 - If your terminal emulator doesn't support Unicode or ANSI Colour codes, you can use the `--ascii` or `--no-colour` flags to ensure compatibility. These can also be toggled with `a` and `c` while running.
 - If PulseTTY fails to detect the height/width of the terminal, they can be overridden with `-c <N>` and `-H <ROWS`. You can also use the `--compact` flag to reduce size on smaller screens.
 - If the rendering is lagging, try raising the frame delay, with `--frame-ms <MS>`. The default is `15ms`.
-- If detecting a default audio capture fails, run `--list-devices` or `--list-mics` and provide the index of an active device. 
+- If detecting a default audio capture fails, run `--list-devices` or `--list-mics` and provide the index of an active device.
 
 ## Tech Stack
 - **Rust**

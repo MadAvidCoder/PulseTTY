@@ -11,6 +11,7 @@ use crossterm::{cursor, execute, style, terminal::{self, EnterAlternateScreen, L
 use rustfft::num_complex::Complex;
 use clap::{Parser, ValueHint, ArgAction};
 use crossterm::event::KeyEventKind;
+use crossterm::style::{Color, SetForegroundColor};
 use helpers::{fit_width, get_filename};
 
 // const FFT_SIZE: usize = 4096;
@@ -314,6 +315,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stdout.queue(cursor::MoveTo(0, 0))?;
             stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
             stdout.queue(style::SetAttribute(style::Attribute::Reverse))?;
+            stdout.queue(SetForegroundColor(Color::Green))?;
             stdout.queue(style::Print(format!("{status_line}")))?;
             stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
         }

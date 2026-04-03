@@ -8,7 +8,7 @@ https://github.com/user-attachments/assets/aa3cc2b5-8ee6-43da-a3c1-d243f209e7d4
 
 | ![bars](https://github.com/user-attachments/assets/bbff94a8-aa56-4837-bd91-c43bac7ca7b0) | ![line](https://github.com/user-attachments/assets/951fd9ef-726c-42b3-b0cb-6be3bbff3650) | ![spectrum](https://github.com/user-attachments/assets/1dde9a92-ed8b-4404-a109-16bdf3541ddd) |
 |:----------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------:|
-| Bars Mode                                                                                | Lines Mode                                                                               | Spectrum Analyser                                                                            |
+|                                        Bars Mode                                         | Lines Mode                                                                               | Spectrum Analyser                                                                            |
 ## Features
 - Runs as a CLI in the terminal
 - Real-time audio visualisation, driven by audio input

@@ -157,6 +157,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut stdout = stdout();
 
+    let mut left_status: String;
+    let mut right_status: String;
+    let mut status_changed: bool = true;
+    let mut size_changed: bool = true;
+    let mut help: String;
+
     let mut renderer = render::Renderer::new(args.mode, render::RenderConfig {
         height,
         ascii: args.ascii,
@@ -290,36 +296,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fft_state.smooth(&target_values[..], &mut cur_values[..], &mut peaks[..]);
 
-        let left_status = format!(" PulseTTY  [{source_label}]  mode: {mode:?}  gain: {gain:.2}  frame: {frame_ms}ms ");
-        let right_status = format!(
-            " cols: {columns}  height: {height}  {}{}{} ",
-            if ascii { "ASCII " } else { "" },
-            if args.compact { "CMP " } else { "" },
-            if no_colour { "NOCOL " } else { "" },
-        );
-        let mut status_line = left_status;
-        if status_line.len() + right_status.len() <= terminal_width as usize{
-            status_line.push_str(&" ".repeat(terminal_width as usize - status_line.len() - right_status.len()));
-            status_line.push_str(&right_status);
+        if status_changed | size_changed {
+            left_status = format!(" PulseTTY  [{source_label}]  mode: {mode:?}  gain: {gain:.2}  frame: {frame_ms}ms ");
+            right_status = format!(
+                " cols: {columns}  height: {height}  {}{}{} ",
+                if ascii { "ASCII " } else { "" },
+                if args.compact { "CMP " } else { "" },
+                if no_colour { "NOCOL " } else { "" },
+            );
+            let mut status_line = left_status;
+            if status_line.len() + right_status.len() <= terminal_width as usize {
+                status_line.push_str(&" ".repeat(terminal_width as usize - status_line.len() - right_status.len()));
+                status_line.push_str(&right_status);
+            }
+            status_line = fit_width(&status_line, terminal_width as usize);
+
+            stdout.queue(cursor::MoveTo(0, 0))?;
+            stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+            stdout.queue(style::SetAttribute(style::Attribute::Reverse))?;
+            stdout.queue(style::Print(format!("{status_line}")))?;
+            stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
         }
-        status_line = fit_width(&status_line, terminal_width as usize);
-        let help = fit_width(" q/Esc quit | m mode | +/- gain | c colour | a ascii ", terminal_width as usize);
+        if size_changed {
+            help = fit_width(" q/Esc quit | m mode | +/- gain | c colour | a ascii ", terminal_width as usize);
 
-        stdout.queue(cursor::MoveTo(0, 0))?;
-        stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
-        stdout.queue(style::SetAttribute(style::Attribute::Reverse))?;
-        stdout.queue(style::Print(format!("{status_line}")))?;
-        stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
-
-        stdout.queue(cursor::MoveTo(0, terminal_height.saturating_sub(1)))?;
-        stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
-        stdout.queue(style::SetAttribute(style::Attribute::Dim))?;
-        stdout.queue(style::Print(format!("{help}")))?;
-        stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
+            stdout.queue(cursor::MoveTo(0, terminal_height.saturating_sub(1)))?;
+            stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+            stdout.queue(style::SetAttribute(style::Attribute::Dim))?;
+            stdout.queue(style::Print(format!("{help}")))?;
+            stdout.queue(style::SetAttribute(style::Attribute::Reset))?;
+        }
 
         renderer.draw(&mut stdout, &cur_values, &peaks)?;
-
         stdout.flush()?;
+
+        size_changed = false;
+        status_changed = false;
 
         while event::poll(Duration::from_millis(0))? {
             match event::read()? {
@@ -333,16 +345,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 return Ok(());
                             } else {
                                 no_colour = renderer.toggle_colour();
+                                status_changed = true;
                             }
                         },
                         KeyCode::Char('m') => {
                             mode = renderer.next_mode();
                             stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+                            status_changed = true;
+                            size_changed = true;
                         },
-                        KeyCode::Char('a') => ascii = renderer.toggle_ascii(),
-                        KeyCode::Char('+') | KeyCode::Char('=') => gain = (gain * 1.1).clamp(0.05, 20.0),
-                        KeyCode::Char('-') | KeyCode::Char('_') => gain = (gain * (1.0 / 1.1)).clamp(0.05, 20.0),
-                        KeyCode::Char('0') => gain = 1.0,
+                        KeyCode::Char('a') => {
+                            ascii = renderer.toggle_ascii();
+                            status_changed = true;
+                        },
+                        KeyCode::Char('+') | KeyCode::Char('=') => {
+                            gain = (gain * 1.1).clamp(0.05, 20.0);
+                            status_changed = true;
+                        },
+                        KeyCode::Char('-') | KeyCode::Char('_') => {
+                            gain = (gain * (1.0 / 1.1)).clamp(0.05, 20.0);
+                            status_changed = true;
+                        },
+                        KeyCode::Char('0') => {
+                            gain = 1.0;
+                            status_changed = true;
+                        },
                         _ => {},
                     }
                 },
@@ -355,6 +382,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let spectrogram_columns = ((terminal_width as usize) / (cell_width as usize)).max(2);
                     renderer.resize(height, spectrogram_columns);
+                    size_changed = true;
                 },
                 _ => {},
             }

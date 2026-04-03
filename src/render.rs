@@ -27,6 +27,8 @@ pub struct Renderer {
     config: RenderConfig,
     history: VecDeque<Vec<f32>>,
     lines: Vec<String>,
+    line_grid: Vec<Vec<char>>,
+    y_values: Vec<i32>,
 }
 
 impl Renderer {
@@ -38,6 +40,8 @@ impl Renderer {
             config,
             history: q,
             lines: vec![String::new(); h],
+            line_grid: Vec::new(),
+            y_values: Vec::new(),
         }
     }
 
@@ -139,7 +143,7 @@ impl Renderer {
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, line) in self.lines.iter_mut().enumerate() {
+        for (e, line) in self.lines.iter().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,
@@ -157,15 +161,15 @@ impl Renderer {
     fn draw_line(&mut self, stdout: &mut impl Write, cur_values: &[f32]) -> io::Result<()> {
         let column_width = if self.config.compact { 1 } else { 4 };
         let width = cur_values.len() * column_width;
-        let mut grid: Vec<Vec<char>> = vec![vec![' '; width]; self.config.height];
 
-        let mut y_values: Vec<i32> = Vec::new();
+        self.y_values.clear();
+        self.y_values.reserve(cur_values.len());
         for &v in cur_values {
             let height = ((1.0 - (v / 100.0)) * (self.config.height - 1) as f32)
                 .round()
                 .clamp(0.0, (self.config.height - 1) as f32 ) as i32;
 
-            y_values.push(height);
+            self.y_values.push(height);
         }
 
         let convert_x = |i: usize| -> i32 {
@@ -189,11 +193,23 @@ impl Renderer {
             grid[row][x] = if !force { merge(cur, char, ascii) } else { char };
         };
 
-        for i in 0..y_values.len().saturating_sub(1) {
+        if self.line_grid.len() != self.config.height {
+            self.line_grid.resize_with(self.config.height, Vec::new);
+        }
+
+        for row in &mut self.line_grid {
+            if row.len() != width {
+                row.resize(width, ' ');
+            } else {
+                row.fill(' ');
+            }
+        }
+
+        for i in 0..self.y_values.len().saturating_sub(1) {
             let x0 = convert_x(i);
             let x1 = convert_x(i+1);
-            let r0 = y_values[i];
-            let r1 = y_values[i+1];
+            let r0 = self.y_values[i];
+            let r1 = self.y_values[i+1];
 
             let dx = x1 - x0;
 
@@ -213,18 +229,18 @@ impl Renderer {
                 let t = step as f32 / dx as f32;
                 let row = (r0 as f32 + (r1 - r0) as f32 * t).round() as i32;
 
-                insert(&mut grid, x0 + step, row, char, self.config.ascii, false);
+                insert(&mut self.line_grid, x0 + step, row, char, self.config.ascii, false);
             }
 
             let dot = if self.config.ascii { '*' } else { '•' };
-            insert(&mut grid, x0, r0, dot, self.config.ascii, true);
+            insert(&mut self.line_grid, x0, r0, dot, self.config.ascii, true);
 
         }
 
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, row) in grid.into_iter().enumerate() {
+        for (e, row) in self.line_grid.iter().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,
@@ -292,7 +308,7 @@ impl Renderer {
         let red = (self.config.height as f32 * 0.2) as usize;
         let yellow = (self.config.height as f32 * 0.45) as usize;
 
-        for (e, line) in self.lines.iter_mut().enumerate() {
+        for (e, line) in self.lines.iter().enumerate() {
             if !self.config.no_colour {
                 stdout.queue(SetForegroundColor(match e {
                     _ if e <= red => Color::Red,
